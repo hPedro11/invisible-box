@@ -103,9 +103,11 @@ O modelo `hand_landmarker.task` deve estar na pasta `models/`.
 
 | Nome | RM |
 |---|---|
-| Nome do integrante 1 | RM000000 |
-| Nome do integrante 2 | RM000000 |
-| Nome do integrante 3 | RM000000 |
+| Pedro Henrique Lima | RM553664 |
+| Murilo Fernandes | RM553582 |
+| Thais Mari Costa | RM553620 |
+| Bruno Furlan | RM553604 |
+| Maria Alice Sousa | RM552717 |
 
 ## Referências
 
