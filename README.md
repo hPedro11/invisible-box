@@ -154,7 +154,7 @@ invisible-box/
 │   ├── glass.py             # vidro transparente: relevo + Sobel + remap por canal (Lab04, Lab05)
 │   ├── box.py               # geometria da janela: girar, redimensionar, inércia
 │   ├── controller.py        # máquina de estados dos gestos
-│   └── overlay.py           # contorno, HUD e painel de debug (Lab01)
+│   └── overlay.py           # linha da janela, HUD e painel de debug (Lab01)
 ├── calibrar.py              # sliders + medições para ajustar o config com a webcam
 ├── models/                  # modelos do MediaPipe (não versionados)
 └── tests/test_offline.py    # testes sem webcam

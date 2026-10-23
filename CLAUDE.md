@@ -22,7 +22,7 @@ Entregáveis pedidos: repositório no GitHub, aprovação da ideia pelo professo
 - `glass.py`: relevo = borda arredondada a partir do `distanceTransform` da silhueta INTEIRA (`GLASS_BEVEL`; a janela só recorta no fim) + linhas internas longas (Canny em meia resolução, contornos com `arcLength` >= `GLASS_RIDGE_MIN_LENGTH`) -> Sobel -> um `cv2.remap` por canal (`GLASS_CHROMA`) + reflexo de luz direcional. Miolo plano = fundo limpo. Processa só o retângulo da pessoa dentro da janela; todos os mapas suaves (inclinação, ondulação, brilho, sombra, alpha já recortado pela janela) são calculados em `GLASS_RELIEF_SCALE` e ampliados; em resolução cheia ficam só os `remap` e os `cv2.blendLinear` (float de 3 canais no NumPy era o gargalo).
 - `box.py`: geometria (centro, w, h, ângulo), cantos, redimensionar pelo canto oposto, física de inércia/quique, ondulação.
 - `controller.py`: máquina de estados DEFININDO -> LIVRE <-> ARRASTANDO / REDIMENSIONANDO / GIRANDO/ESCALANDO / DESLIZANDO. Em DEFININDO, a prévia vai de ponta de indicador a ponta de indicador; a pinça rápida (fecha e abre em até `TAP_MAX_SECONDS`) salva os cantos de `TAP_LOOKBACK` s antes da pinça, porque o dedo se move ao fazer a pinça.
-- `overlay.py`: contorno com brilho (borrado em meia resolução, só em volta da janela), prévia, HUD (com % do fundo aprendido) e painel de debug (tecla D).
+- `overlay.py`: janela = linha fina e translúcida como no vídeo (`BOX_*` no config; cantos só aparecem com a mão perto), prévia no mesmo estilo, HUD (com % do fundo aprendido) e painel de debug (tecla D).
 
 ## Comandos
 

@@ -67,7 +67,14 @@ GLASS_SHIMMER = 1.5        # ondulação interna (px), animada no tempo
 GLASS_HIGHLIGHT = 0.55     # intensidade do brilho (reflexo da luz no vidro)
 GLASS_TINT = (255, 235, 215)  # BGR do reflexo (azul bem claro)
 
-# --- Janela ---------------------------------------------------------------
+# --- Janela: aparência (linha fina e translúcida, como no vídeo) -------------
+BOX_COLOR = (205, 150, 95)        # BGR: azul acinzentado
+BOX_ACTIVE_COLOR = (255, 215, 160)  # BGR: mais claro enquanto arrasta/redimensiona/gira
+BOX_LINE_WIDTH = 1                # px
+BOX_LINE_ALPHA = 0.8              # 0 = invisível, 1 = opaca
+BOX_CORNER_HINT = 90              # px: com a mão perto de um canto, ele aparece
+
+# --- Janela: comportamento -------------------------------------------------
 MIN_BOX_SIZE = 60
 CORNER_GRAB_RADIUS = 40    # px: pinça perto de um canto -> redimensionar
 GRAB_MARGIN = 15           # px de tolerância para "dentro da janela"

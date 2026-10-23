@@ -2,6 +2,7 @@
 import cv2
 import numpy as np
 
+from . import config
 from .controller import State
 
 CYAN = (255, 220, 80)
@@ -21,49 +22,60 @@ def _pt(p):
     return int(round(p[0])), int(round(p[1]))
 
 
+def _thin_outline(frame, poly, color):
+    """Contorno fino e translúcido (linha desenhada numa cópia e misturada)."""
+    h, w = frame.shape[:2]
+    bx, by, bw, bh = cv2.boundingRect(poly)
+    m = config.BOX_LINE_WIDTH + 2
+    x0, y0 = max(bx - m, 0), max(by - m, 0)
+    x1, y1 = min(bx + bw + m, w), min(by + bh + m, h)
+    if x1 <= x0 or y1 <= y0:
+        return
+    region = frame[y0:y1, x0:x1]
+    layer = region.copy()
+    cv2.polylines(layer, [poly - (x0, y0)], True, color, config.BOX_LINE_WIDTH, cv2.LINE_AA)
+    a = config.BOX_LINE_ALPHA
+    frame[y0:y1, x0:x1] = cv2.addWeighted(layer, a, region, 1.0 - a, 0.0)
+
+
 def draw_box(frame, controller, t):
+    """A janela: só uma linha fina, como no vídeo de referência.
+
+    Os cantos ficam escondidos e aparecem quando uma mão chega perto deles
+    (é quando dá para redimensionar).
+    """
     box = controller.box
     if box is None:
         return
     active = controller.state in (State.DRAGGING, State.RESIZING, State.TRANSFORMING)
-    color = ORANGE if active else CYAN
+    color = config.BOX_ACTIVE_COLOR if active else config.BOX_COLOR
     poly = np.round(box.polygon(t)).astype(np.int32)
-    # brilho: linha grossa borrada por baixo + linha fina por cima.
-    # Só o retângulo em volta da janela é borrado (a tela inteira custava ~5 ms em 720p).
-    h, w = frame.shape[:2]
-    m = 24                                   # cobre a espessura + o espalhamento do blur
-    bx, by, bw, bh = cv2.boundingRect(poly)
-    x0, y0 = max(bx - m, 0), max(by - m, 0)
-    x1, y1 = min(bx + bw + m, w), min(by + bh + m, h)
-    if x1 > x0 and y1 > y0:
-        # o brilho é borrado de qualquer jeito: desenha e borra em meia resolução
-        gw, gh = max((x1 - x0) // 2, 1), max((y1 - y0) // 2, 1)
-        glow = np.zeros((gh, gw, 3), np.uint8)
-        cv2.polylines(glow, [(poly - (x0, y0)) // 2], True, color, 3, cv2.LINE_AA)
-        glow = cv2.GaussianBlur(glow, (0, 0), 3)
-        glow = cv2.resize(glow, (x1 - x0, y1 - y0), interpolation=cv2.INTER_LINEAR)
-        frame[y0:y1, x0:x1] = cv2.add(frame[y0:y1, x0:x1], glow)
-    cv2.polylines(frame, [poly], True, color, 1, cv2.LINE_AA)
+    _thin_outline(frame, poly, color)
 
-    if controller.state in (State.FREE, State.RESIZING):
-        for i, c in enumerate(box.corners()):
-            on = controller.state == State.RESIZING and controller._grab.get("corner") == i
-            cv2.circle(frame, _pt(c), 7 if on else 4, ORANGE if on else color, -1, cv2.LINE_AA)
+    if controller.state not in (State.FREE, State.RESIZING):
+        return
+    grabbed = controller._grab.get("corner") if controller.state == State.RESIZING else None
+    for i, c in enumerate(box.corners()):
+        if i == grabbed:
+            cv2.circle(frame, _pt(c), 5, config.BOX_ACTIVE_COLOR, -1, cv2.LINE_AA)
+        elif any(np.linalg.norm(h.point - c) < config.BOX_CORNER_HINT for h in controller.hands):
+            cv2.circle(frame, _pt(c), 5, color, 1, cv2.LINE_AA)
 
 
 def draw_preview(frame, controller):
-    """Retângulo entre os dois indicadores; fica verde durante a pinça rápida."""
+    """Retângulo entre os dois indicadores, no mesmo estilo da janela."""
     if controller.preview is None:
         return
     p1, p2 = controller.preview
+    x0, y0 = _pt(np.minimum(p1, p2))
+    x1, y1 = _pt(np.maximum(p1, p2))
+    poly = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], np.int32)
     if controller.tap_pending:
-        cv2.rectangle(frame, _pt(p1), _pt(p2), GREEN, 2, cv2.LINE_AA)
-        x, y = _pt(np.minimum(p1, p2))
-        cv2.putText(frame, "solte a pinca para salvar", (x, y - 8), FONT, 0.5, GREEN, 1, cv2.LINE_AA)
+        _thin_outline(frame, poly, config.BOX_ACTIVE_COLOR)
+        cv2.putText(frame, "solte a pinca para salvar", (x0, y0 - 8), FONT, 0.5,
+                    config.BOX_ACTIVE_COLOR, 1, cv2.LINE_AA)
     else:
-        cv2.rectangle(frame, _pt(p1), _pt(p2), WHITE, 1, cv2.LINE_AA)
-    for p in (p1, p2):
-        cv2.circle(frame, _pt(p), 6, GREEN if controller.tap_pending else WHITE, 1, cv2.LINE_AA)
+        _thin_outline(frame, poly, config.BOX_COLOR)
 
 
 def draw_hands(frame, controller, show_skeleton):
