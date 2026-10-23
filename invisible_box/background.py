@@ -33,6 +33,7 @@ class BackgroundModel:
         self._fill = None     # cache do inpaint das áreas nunca vistas
         self._image = None    # fundo final (uint8) usado pelo efeito
         self._frames = 0
+        self._person_prev = None  # máscara anterior (para a histerese)
 
     @property
     def ready(self):
@@ -62,10 +63,19 @@ class BackgroundModel:
         Limiar e morfologia rodam na resolução do segmentador (pequena, rápido);
         a ampliação é linear + novo limiar, o que deixa a borda lisa em vez de
         "em escadinha".
+
+        Limiar duplo (histerese, como no Canny): o pixel vira pessoa acima de
+        SEG_THRESHOLD, mas só deixa de ser abaixo de SEG_KEEP_THRESHOLD. A borda
+        para de oscilar e regiões de pouca certeza (cabelo) continuam cobertas.
         """
         mask = (prob > config.SEG_THRESHOLD).astype(np.uint8) * 255   # Lab02: limiarização
+        prev = self._person_prev
+        if prev is not None and prev.shape == mask.shape:
+            keep = (prob > config.SEG_KEEP_THRESHOLD).astype(np.uint8) * 255
+            mask = cv2.bitwise_or(mask, cv2.bitwise_and(keep, prev))
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self._open_k)    # Lab06: tira pontinhos
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self._close_k)  # Lab06: fecha buracos
+        self._person_prev = mask
         h, w = shape[:2]
         if mask.shape[:2] != (h, w):
             mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_LINEAR)

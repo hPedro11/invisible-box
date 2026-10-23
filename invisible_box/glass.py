@@ -35,6 +35,7 @@ def _ellipse(size):
 class GlassEffect:
     def __init__(self):
         self._grid_cache = {}
+        self._ridge_memory = None   # linhas internas acumuladas, no tamanho do frame reduzido
 
     def _grid(self, h, w):
         key = (h, w)
@@ -46,7 +47,8 @@ class GlassEffect:
     @staticmethod
     def _long_edges(img, min_length):
         """Bordas da imagem (Canny) mantendo só as linhas com comprimento >= min_length px."""
-        gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (5, 5), 0)
+        # blur maior antes do Canny: menos bordas criadas pelo ruído da câmera
+        gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (7, 7), 0)
         lo, hi = config.GLASS_CANNY
         edges = cv2.Canny(gray, lo, hi)
         contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
@@ -56,7 +58,27 @@ class GlassEffect:
         cv2.drawContours(canvas, keep, -1, 255, 1, cv2.LINE_AA)
         return canvas
 
-    def _relief_maps(self, f, person, boxm, k, origin, t):
+    def _remember_ridges(self, ridges, origin_s, frame_shape_s):
+        """Média móvel das linhas internas, guardada em coordenadas do FRAME.
+
+        O Canny reage ao ruído da câmera e acha linhas um pouco diferentes a
+        cada frame; com memória, as linhas firmes ficam e as aleatórias somem.
+        """
+        a = config.GLASS_RIDGE_MEMORY
+        if a <= 0:
+            return ridges
+        if self._ridge_memory is None or self._ridge_memory.shape != frame_shape_s:
+            self._ridge_memory = np.zeros(frame_shape_s, np.float32)
+        x0, y0 = origin_s
+        h, w = ridges.shape
+        region = self._ridge_memory[y0:y0 + h, x0:x0 + w]
+        if region.shape != ridges.shape:      # recorte encostado na borda: sem memória
+            return ridges
+        cv2.addWeighted(region, a, ridges, 1.0 - a, 0.0, dst=region)
+        self._ridge_memory[y0:y0 + h, x0:x0 + w] = region
+        return region.copy()
+
+    def _relief_maps(self, f, person, boxm, k, origin, t, frame_shape):
         """Todos os mapas suaves do vidro, calculados em escala reduzida e ampliados.
 
         Relevo, inclinação, ondulação, brilho, sombra e transparência variam
@@ -88,6 +110,9 @@ class GlassEffect:
             kr = _odd(config.GLASS_RIDGE_WIDTH * unit)
             ridges = cv2.GaussianBlur(lines.astype(np.float32) / 255.0, (kr, kr), 0)
             ridges = np.minimum(ridges * (kr / 4.0), 1.0)
+            origin_s = (round(origin[0] * rs), round(origin[1] * rs))
+            frame_s = (round(frame_shape[0] * rs), round(frame_shape[1] * rs))
+            ridges = self._remember_ridges(ridges, origin_s, frame_s)
             relief = cv2.scaleAdd(ridges, float(config.GLASS_RIDGES), relief)
 
         # inclinação do relevo; ~1 na borda do contorno
@@ -104,17 +129,18 @@ class GlassEffect:
         shimmer = cv2.multiply(wave, person_s.astype(np.float32),
                                scale=config.GLASS_SHIMMER * k / 255.0)
 
-        # luz: o lado do vidro virado para a luz brilha, o oposto escurece um pouco
+        # luz: só os pontos do vidro virados para a luz brilham (reflexo pontual,
+        # nada de contorno branco leitoso); o lado oposto escurece de leve
         facing = cv2.addWeighted(gx, float(_LIGHT[0]), gy, float(_LIGHT[1]), 0.0)
-        rim = np.clip(cv2.magnitude(gx, gy) - 0.35, 0.0, 1.0)
         glint = np.clip(facing, 0.0, 1.0)
-        glint = np.minimum((glint * glint + 0.35 * rim) * np.float32(config.GLASS_HIGHLIGHT), 1.0)
-        shade = np.clip(-facing, 0.0, 1.0) * np.float32(0.35 * config.GLASS_HIGHLIGHT)
+        glint = np.minimum(glint * glint * glint * np.float32(config.GLASS_HIGHLIGHT * 1.5), 1.0)
+        shade = np.clip(-facing, 0.0, 1.0) * np.float32(0.25 * config.GLASS_HIGHLIGHT)
 
         # transparência: cobre a pessoa e um pouco além da borda (esconde o "halo"),
         # só dentro da janela (Lab05: máscara x máscara)
-        alpha = cv2.dilate(person_s, _ellipse(5 * unit)).astype(np.float32) / 255.0
-        alpha = cv2.GaussianBlur(alpha, (_odd(7 * unit), _odd(7 * unit)), 0)
+        cover = config.GLASS_COVER * unit
+        alpha = cv2.dilate(person_s, _ellipse(cover)).astype(np.float32) / 255.0
+        alpha = cv2.GaussianBlur(alpha, (_odd(cover * 1.2), _odd(cover * 1.2)), 0)
         box_s = cv2.resize(boxm, (sw, sh), interpolation=cv2.INTER_AREA)
         alpha = cv2.multiply(alpha, box_s.astype(np.float32), scale=1.0 / 255.0)
 
@@ -133,7 +159,7 @@ class GlassEffect:
         k = W / config.GLASS_REF_WIDTH            # px de referência -> px desta imagem
         strength = config.GLASS_STRENGTH * k
         pad = int(strength * (1 + config.GLASS_CHROMA)
-                  + (config.GLASS_BEVEL + config.GLASS_RIDGE_WIDTH) * k)
+                  + (config.GLASS_BEVEL + config.GLASS_RIDGE_WIDTH + config.GLASS_COVER) * k)
         x, y, bw, bh = box_bbox
         x0, y0 = max(x, 0), max(y, 0)
         x1, y1 = min(x + bw, W), min(y + bh, H)
@@ -155,7 +181,8 @@ class GlassEffect:
         # o relevo usa a silhueta INTEIRA; a janela só recorta no final. Assim a
         # borda da janela corta o corpo "seco", sem virar um tubo de vidro.
         person = person_mask[y0:y1, x0:x1]
-        gx, gy, shimmer, glint, shade, alpha = self._relief_maps(f, person, boxm, k, (x0, y0), t)
+        gx, gy, shimmer, glint, shade, alpha = self._relief_maps(f, person, boxm, k, (x0, y0), t,
+                                                                 frame.shape[:2])
 
         grid_x, grid_y = self._grid(*person.shape)
         base_x, base_y = cv2.add(grid_x, shimmer), cv2.add(grid_y, shimmer)

@@ -34,11 +34,14 @@ YELLOW = (0, 230, 255)
 # nome do slider: (atributo do config, máximo do slider, escala slider -> valor)
 TRACKBARS = {
     "SEG_THRESHOLD x100": ("SEG_THRESHOLD", 100, 100),
+    "SEG_KEEP_THRESHOLD x100": ("SEG_KEEP_THRESHOLD", 100, 100),
     "PINCH_ON x100": ("PINCH_ON", 100, 100),
     "PINCH_OFF x100": ("PINCH_OFF", 100, 100),
     "GLASS_BEVEL": ("GLASS_BEVEL", 40, 1),
     "GLASS_RIDGES x10": ("GLASS_RIDGES", 30, 10),
     "GLASS_RIDGE_MIN_LENGTH": ("GLASS_RIDGE_MIN_LENGTH", 500, 1),
+    "GLASS_RIDGE_MEMORY x100": ("GLASS_RIDGE_MEMORY", 95, 100),
+    "GLASS_COVER": ("GLASS_COVER", 30, 1),
     "GLASS_STRENGTH": ("GLASS_STRENGTH", 60, 1),
     "GLASS_CHROMA x100": ("GLASS_CHROMA", 100, 100),
     "GLASS_SHIMMER x10": ("GLASS_SHIMMER", 100, 10),
@@ -62,7 +65,7 @@ def parse_args():
 
 def create_sliders():
     cv2.namedWindow(SLIDERS, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(SLIDERS, 480, 440)
+    cv2.resizeWindow(SLIDERS, 480, 560)
     for name, (attr, maximum, scale) in TRACKBARS.items():
         value = int(round(getattr(config, attr) * scale))
         cv2.createTrackbar(name, SLIDERS, min(value, maximum), maximum, lambda _v: None)

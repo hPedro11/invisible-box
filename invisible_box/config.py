@@ -26,8 +26,9 @@ SEGMENTER_URL = (
     "https://storage.googleapis.com/mediapipe-models/image_segmenter/"
     "selfie_segmenter/float16/latest/selfie_segmenter.tflite"
 )
-SEG_THRESHOLD = 0.5        # probabilidade mínima para o pixel ser "pessoa" (Lab02)
-SEG_SMOOTHING = 0.4        # média móvel da probabilidade entre frames (0 = sem suavizar)
+SEG_THRESHOLD = 0.5        # probabilidade para o pixel PASSAR a ser "pessoa" (Lab02)
+SEG_KEEP_THRESHOLD = 0.25  # ...e para CONTINUAR sendo (histerese: a borda não oscila)
+SEG_SMOOTHING = 0.5        # média móvel da probabilidade entre frames (0 = sem suavizar)
 
 # --- Gestos ---------------------------------------------------------------
 # distância polegar-indicador dividida pelo tamanho da mão (pulso -> base do médio)
@@ -56,15 +57,17 @@ MORPH_CLOSE_KERNEL = 9     # fecha buracos pequenos (em PROCESS_WIDTH)
 # escalados com a resolução, para o vidro ter a mesma cara em 640, 960 ou 1280.
 GLASS_REF_WIDTH = 960
 GLASS_RELIEF_SCALE = 0.5   # o relevo é calculado nesta escala (é suave; poupa tempo)
-GLASS_BEVEL = 16           # px: largura da borda de vidro (o "tubo" do contorno)
-GLASS_RIDGES = 0.7         # força das linhas de vidro internas (dedos, braços, rosto)
+GLASS_BEVEL = 11           # px: largura da borda de vidro (o "tubo" do contorno)
+GLASS_RIDGES = 1.2         # força das linhas de vidro internas (dedos, braços, rosto)
 GLASS_RIDGE_WIDTH = 11     # largura das linhas internas (ímpar)
 GLASS_RIDGE_MIN_LENGTH = 180  # px: linhas internas mais curtas que isso são ignoradas
 GLASS_CANNY = (40, 110)    # limiares do Canny que acha as linhas internas
+GLASS_RIDGE_MEMORY = 0.75  # 0..1: peso dos frames anteriores nas linhas internas (tira o pisca-pisca)
+GLASS_COVER = 8            # px: a transparência cobre além da borda (esconde a franja do cabelo)
 GLASS_STRENGTH = 26.0      # deslocamento máximo (px) da refração
 GLASS_CHROMA = 0.35        # separação de cores (aberração cromática) nas bordas
-GLASS_SHIMMER = 1.5        # ondulação interna (px), animada no tempo
-GLASS_HIGHLIGHT = 0.55     # intensidade do brilho (reflexo da luz no vidro)
+GLASS_SHIMMER = 1.0        # ondulação interna (px), animada no tempo
+GLASS_HIGHLIGHT = 0.35     # intensidade do brilho (reflexo da luz no vidro)
 GLASS_TINT = (255, 235, 215)  # BGR do reflexo (azul bem claro)
 
 # --- Janela: aparência (linha fina e translúcida, como no vídeo) -------------
