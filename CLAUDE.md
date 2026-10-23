@@ -35,7 +35,7 @@ Entregáveis pedidos: repositório no GitHub, aprovação da ideia pelo professo
 - Segunda versão (branch `calibracao-webcam`): interação por indicadores + pinça rápida, segmentação do MediaPipe no lugar da subtração de fundo, fundo aprendido com pessoas na cena e vidro transparente com aberração cromática. Testada com dados sintéticos e com um frame real do vídeo de referência. **Ainda não foi testada com a webcam real**; próximo passo: rodar `calibrar.py` e ajustar `PINCH_*`, `SEG_THRESHOLD` e `GLASS_*`.
 - A câmera precisa ficar parada (o fundo aprendido vale para aquele ponto de vista).
 - Limite conhecido: quem fica parado no mesmo lugar desde o início deixa um buraco nunca visto no fundo, preenchido por inpaint (fica borrado) até a pessoa se mexer.
-- Falta: criar o repositório no GitHub (`hPedro11/invisible-box`) e dar push; enviar a ideia para aprovação do professor.
+- Repositório: https://github.com/hPedro11/invisible-box (`main` + tags `v1.0` e `v2.0`; cada versão marcante ganha uma tag nova). Falta: enviar a ideia para aprovação do professor.
 
 ## Grupo
 

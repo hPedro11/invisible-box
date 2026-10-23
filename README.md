@@ -165,9 +165,3 @@ invisible-box/
 | Thais Mari Costa | RM553620 |
 | Bruno Furlan | RM553604 |
 | Maria Alice Sousa | RM552717 |
-
-## Referências
-
-- Material da disciplina: https://arnaldojr.github.io/cognitivecomputing/
-- MediaPipe Hand Landmarker: https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker
-- OpenCV Background Subtraction: https://docs.opencv.org/4.x/d1/dc5/tutorial_background_subtraction.html
