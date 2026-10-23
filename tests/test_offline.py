@@ -180,7 +180,11 @@ def test_segmenter(scene):
     seg = PersonSegmenter()
     prob = seg.probability(scene)
     seg.close()
-    assert prob.shape == scene.shape[:2] and prob.dtype == np.float32
+    # o segmentador roda numa cópia reduzida; a máscara volta ao tamanho do frame
+    h, w = scene.shape[:2]
+    assert prob.shape == (round(h * config.PROCESS_WIDTH / w), config.PROCESS_WIDTH), prob.shape
+    assert prob.dtype == np.float32
+    assert BackgroundModel().person_mask(prob, scene.shape).shape == (h, w)
     assert prob.mean() < 0.2, prob.mean()     # cenário sem ninguém: quase nada é pessoa
     print(f"segmentador: ok (prob. média sem pessoas {prob.mean():.3f})")
 
@@ -227,8 +231,9 @@ def test_render(scene, bgm, out_dir=Path("tests/output")):
     err_bg = np.abs(out[body].astype(int) - scene[body].astype(int)).mean()
     err_person = np.abs(out[body].astype(int) - frame[body].astype(int)).mean()
     assert err_bg < err_person, (err_bg, err_person)
-    # fora da janela nada muda
-    assert np.array_equal(out[~inside], frame[~inside])
+    # fora da janela nada muda (a borda da janela é suavizada em ~2 px)
+    near = cv2.dilate(box.mask(frame.shape), np.ones((7, 7), np.uint8)) > 0
+    assert np.array_equal(out[~near], frame[~near])
 
     from invisible_box import overlay
     c = BoxController(960, 540)

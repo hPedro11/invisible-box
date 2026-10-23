@@ -28,11 +28,21 @@ def draw_box(frame, controller, t):
     active = controller.state in (State.DRAGGING, State.RESIZING, State.TRANSFORMING)
     color = ORANGE if active else CYAN
     poly = np.round(box.polygon(t)).astype(np.int32)
-    # brilho: linha grossa borrada por baixo + linha fina por cima
-    glow = np.zeros_like(frame)
-    cv2.polylines(glow, [poly], True, color, 6, cv2.LINE_AA)
-    glow = cv2.GaussianBlur(glow, (0, 0), 6)
-    cv2.add(frame, glow, dst=frame)
+    # brilho: linha grossa borrada por baixo + linha fina por cima.
+    # Só o retângulo em volta da janela é borrado (a tela inteira custava ~5 ms em 720p).
+    h, w = frame.shape[:2]
+    m = 24                                   # cobre a espessura + o espalhamento do blur
+    bx, by, bw, bh = cv2.boundingRect(poly)
+    x0, y0 = max(bx - m, 0), max(by - m, 0)
+    x1, y1 = min(bx + bw + m, w), min(by + bh + m, h)
+    if x1 > x0 and y1 > y0:
+        # o brilho é borrado de qualquer jeito: desenha e borra em meia resolução
+        gw, gh = max((x1 - x0) // 2, 1), max((y1 - y0) // 2, 1)
+        glow = np.zeros((gh, gw, 3), np.uint8)
+        cv2.polylines(glow, [(poly - (x0, y0)) // 2], True, color, 3, cv2.LINE_AA)
+        glow = cv2.GaussianBlur(glow, (0, 0), 3)
+        glow = cv2.resize(glow, (x1 - x0, y1 - y0), interpolation=cv2.INTER_LINEAR)
+        frame[y0:y1, x0:x1] = cv2.add(frame[y0:y1, x0:x1], glow)
     cv2.polylines(frame, [poly], True, color, 1, cv2.LINE_AA)
 
     if controller.state in (State.FREE, State.RESIZING):

@@ -102,6 +102,8 @@ python download_models.py      # baixa os modelos de mãos e de segmentação (u
 python main.py                 # use --camera 1 para outra câmera, --debug para ver fundo e máscara
 ```
 
+O programa pede 1280x720 à câmera e usa a resolução que ela entregar, sem esticar a imagem (a resolução usada aparece no terminal). Para manter o FPS, o MediaPipe recebe uma cópia reduzida do frame e os mapas suaves do efeito de vidro são calculados em meia resolução.
+
 ### Como usar
 
 1. **Fundo:** o HUD mostra quanto do fundo já foi visto (`fundo 87%`). Pessoas que passam ou se mexem não atrapalham, mas a câmera não enxerga atrás de quem está parado: saia do quadro por ~2 segundos uma vez para o cenário atrás de você ser aprendido. Enquanto faltar fundo dentro da janela, aparece um aviso na tela, e o painel de debug (`D`) pinta essas áreas de magenta.
@@ -138,11 +140,13 @@ Simula mãos (landmarks sintéticos) e uma cena com uma pessoa andando para test
 
 ```
 invisible-box/
-├── main.py                  # loop principal: câmera -> visão -> gestos -> efeito -> tela
+├── main.py                  # abre a câmera e a janela; teclas
 ├── download_models.py       # baixa o modelo do MediaPipe
 ├── requirements.txt
 ├── invisible_box/
 │   ├── config.py            # todos os parâmetros ajustáveis
+│   ├── pipeline.py          # um frame: visão -> fundo -> gestos -> efeito -> interface
+│   ├── imaging.py           # cópia reduzida do frame para o MediaPipe
 │   ├── hand_tracker.py      # MediaPipe HandLandmarker em modo VIDEO (Lab13)
 │   ├── person_segmenter.py  # MediaPipe ImageSegmenter: máscara das pessoas (Lab13)
 │   ├── gestures.py          # pinça com histerese, dedo esticado, mão aberta

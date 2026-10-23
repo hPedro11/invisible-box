@@ -10,6 +10,7 @@ import mediapipe as mp
 import numpy as np
 
 from . import config
+from .imaging import reduced_copy
 
 _vision = mp.tasks.vision
 
@@ -28,8 +29,12 @@ class PersonSegmenter:
         self._prob = None
 
     def probability(self, frame_bgr):
-        """Probabilidade (0..1, float32) de cada pixel ser pessoa, suavizada no tempo."""
-        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)  # o modelo espera RGB
+        """Probabilidade (0..1, float32) de cada pixel ser pessoa, suavizada no tempo.
+
+        Roda numa cópia reduzida (PROCESS_WIDTH), então o resultado também vem
+        reduzido; BackgroundModel.person_mask leva de volta ao tamanho do frame.
+        """
+        rgb = cv2.cvtColor(reduced_copy(frame_bgr), cv2.COLOR_BGR2RGB)  # o modelo espera RGB
         image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
 
         ts = int((time.perf_counter() - self._t0) * 1000)

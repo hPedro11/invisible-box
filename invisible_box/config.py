@@ -2,8 +2,9 @@
 
 # --- Câmera ---------------------------------------------------------------
 CAMERA_INDEX = 0
-FRAME_WIDTH = 960          # resolução de trabalho (mantém o FPS alto)
-FRAME_HEIGHT = 540
+FRAME_WIDTH = 1280         # resolução PEDIDA à câmera; se ela não tiver esse modo,
+FRAME_HEIGHT = 720         # usamos o que ela entregar, sem esticar a imagem
+PROCESS_WIDTH = 640        # largura das cópias reduzidas que vão para o MediaPipe
 MIRROR = True              # espelha a imagem (fica natural, como um espelho)
 
 # --- MediaPipe: mãos (Lab13) ---------------------------------------------
@@ -42,18 +43,23 @@ RESET_CONFIRM_FRAMES = 30  # frames com as duas mãos abertas para recriar a jan
 # --- Fundo aprendido com pessoas na cena (Lab07 / Lab06) --------------------
 PERSON_DILATE = 21         # px: margem em volta das pessoas que NÃO entra no fundo
 BG_LEARNING_RATE = 0.05    # quão rápido o fundo se adapta onde não há pessoa
+BG_UPDATE_EVERY = 2        # aprende o fundo a cada N frames (ele muda devagar)
 BG_CONFIRM_FRAMES = 6      # frames seguidos sem pessoa até o pixel entrar no fundo
 BG_MISSING_WARN = 0.03     # avisa se mais que 3% da janela ainda não tem fundo conhecido
 BG_INPAINT_EVERY = 10      # frames entre os preenchimentos das áreas nunca vistas
-BG_INPAINT_SCALE = 0.25    # escala do inpaint (menor = mais rápido)
-MORPH_OPEN_KERNEL = 5      # remove ruído pequeno da máscara da pessoa
-MORPH_CLOSE_KERNEL = 9     # fecha buracos pequenos
+BG_INPAINT_WIDTH = 240     # largura em que o inpaint roda (menor = mais rápido)
+MORPH_OPEN_KERNEL = 5      # remove ruído pequeno da máscara da pessoa (em PROCESS_WIDTH)
+MORPH_CLOSE_KERNEL = 9     # fecha buracos pequenos (em PROCESS_WIDTH)
 
 # --- Efeito de vidro transparente (Lab04) -----------------------------------
+# Os valores em px valem para uma imagem de GLASS_REF_WIDTH de largura e são
+# escalados com a resolução, para o vidro ter a mesma cara em 640, 960 ou 1280.
+GLASS_REF_WIDTH = 960
+GLASS_RELIEF_SCALE = 0.5   # o relevo é calculado nesta escala (é suave; poupa tempo)
 GLASS_BEVEL = 16           # px: largura da borda de vidro (o "tubo" do contorno)
 GLASS_RIDGES = 0.7         # força das linhas de vidro internas (dedos, braços, rosto)
 GLASS_RIDGE_WIDTH = 11     # largura das linhas internas (ímpar)
-GLASS_RIDGE_MIN_LENGTH = 90  # px: linhas internas mais curtas que isso são ignoradas
+GLASS_RIDGE_MIN_LENGTH = 180  # px: linhas internas mais curtas que isso são ignoradas
 GLASS_CANNY = (40, 110)    # limiares do Canny que acha as linhas internas
 GLASS_STRENGTH = 26.0      # deslocamento máximo (px) da refração
 GLASS_CHROMA = 0.35        # separação de cores (aberração cromática) nas bordas

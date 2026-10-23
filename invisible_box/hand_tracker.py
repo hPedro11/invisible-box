@@ -7,6 +7,7 @@ import mediapipe as mp
 import numpy as np
 
 from . import config
+from .imaging import reduced_copy
 
 BaseOptions = mp.tasks.BaseOptions
 HandLandmarker = mp.tasks.vision.HandLandmarker
@@ -36,9 +37,13 @@ class HandTracker:
         self._last_ts = -1
 
     def detect(self, frame_bgr):
-        """Recebe o frame ORIGINAL (BGR) e devolve a lista de mãos em pixels."""
+        """Recebe o frame ORIGINAL (BGR) e devolve a lista de mãos em pixels desse frame.
+
+        O modelo roda numa cópia reduzida; como os landmarks vêm normalizados
+        (0..1), basta multiplicar pelo tamanho do frame original.
+        """
         h, w = frame_bgr.shape[:2]
-        rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)  # o modelo espera RGB
+        rgb = cv2.cvtColor(reduced_copy(frame_bgr), cv2.COLOR_BGR2RGB)  # o modelo espera RGB
         image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
 
         ts = int((time.perf_counter() - self._t0) * 1000)

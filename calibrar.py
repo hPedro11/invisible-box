@@ -16,20 +16,14 @@ Teclas:
 """
 import argparse
 import json
-import sys
-import time
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from invisible_box import config, gestures, overlay
-from invisible_box.background import BackgroundModel
-from invisible_box.controller import BoxController
-from invisible_box.glass import GlassEffect
-from invisible_box.hand_tracker import HandTracker
-from invisible_box.person_segmenter import PersonSegmenter
-from main import MISSING_BG_WARNING
+from invisible_box import config, gestures
+from invisible_box.pipeline import Pipeline, open_camera
+from main import check_models, create_window
 
 WINDOW = "Invisible Box - calibracao"
 SLIDERS = "Ajustes"
@@ -44,7 +38,7 @@ TRACKBARS = {
     "PINCH_OFF x100": ("PINCH_OFF", 100, 100),
     "GLASS_BEVEL": ("GLASS_BEVEL", 40, 1),
     "GLASS_RIDGES x10": ("GLASS_RIDGES", 30, 10),
-    "GLASS_RIDGE_MIN_LENGTH": ("GLASS_RIDGE_MIN_LENGTH", 300, 1),
+    "GLASS_RIDGE_MIN_LENGTH": ("GLASS_RIDGE_MIN_LENGTH", 500, 1),
     "GLASS_STRENGTH": ("GLASS_STRENGTH", 60, 1),
     "GLASS_CHROMA x100": ("GLASS_CHROMA", 100, 100),
     "GLASS_SHIMMER x10": ("GLASS_SHIMMER", 100, 10),
@@ -191,93 +185,35 @@ def save(recorder):
 
 def main():
     args = parse_args()
-    for path in (config.MODEL_PATH, config.SEGMENTER_PATH):
-        if not Path(path).exists():
-            sys.exit(f"Modelo não encontrado em {path}. Rode: python download_models.py")
-
-    cap = cv2.VideoCapture(args.camera)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, args.height)
-    if not cap.isOpened():
-        sys.exit(f"Não foi possível abrir a câmera {args.camera}.")
-    print(f"[calibracao] câmera {args.camera}: "
-          f"{int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
-
-    tracker = HandTracker()
-    segmenter = PersonSegmenter()
-    background = BackgroundModel()
-    glass = GlassEffect()
-    controller = BoxController(args.width, args.height)
+    check_models()
+    cap, size = open_camera(args.camera, args.width, args.height)
+    pipe = Pipeline(size, mirror=config.MIRROR and not args.no_mirror, show_debug=True)
     recorder = Recorder()
-    show_debug, show_hands = True, True
-    mirror = config.MIRROR and not args.no_mirror
-
-    cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
+    create_window(WINDOW, size)
     create_sliders()
-    last = time.perf_counter()
-    fps = 0.0
     try:
         while True:
             ok, frame = cap.read()
             if not ok:
                 print("Falha ao ler a câmera.")
                 break
-            if frame.shape[1] != args.width or frame.shape[0] != args.height:
-                frame = cv2.resize(frame, (args.width, args.height))
-            if mirror:
-                frame = cv2.flip(frame, 1)
-
-            now = time.perf_counter()
-            dt = min(now - last, 0.1)
-            last = now
-            fps = fps * 0.9 + (1.0 / max(dt, 1e-3)) * 0.1
-            read_sliders(controller)
-
-            hands = tracker.detect(frame)
-            person = background.person_mask(segmenter.probability(frame))
-            background.update(frame, person)
-            controller.update(hands, now, dt)
-            recorder.feed(now, controller.hands)
-
-            warning = None
-            if controller.box is not None:
-                box_mask = controller.box.mask(frame.shape, now)
-                view = glass.render(frame, background.image(), person, box_mask,
-                                    controller.box.bbox(), now)
-                if background.missing_fraction(box_mask) > config.BG_MISSING_WARN:
-                    warning = MISSING_BG_WARNING
-            else:
-                view = frame.copy()
-
-            overlay.draw_box(view, controller, now)
-            overlay.draw_preview(view, controller)
-            overlay.draw_hands(view, controller, show_hands)
-            if show_debug:
-                overlay.debug_panel(view, background.image(), person, background.unknown_mask())
-            overlay.draw_hud(view, controller, fps, background.known_fraction, warning)
-            draw_measurements(view, controller, person, background.known_fraction,
-                              recorder.status(now))
+            read_sliders(pipe.controller)
+            view = pipe.step(frame)
+            recorder.feed(pipe.now, pipe.controller.hands)
+            draw_measurements(view, pipe.controller, pipe.person, pipe.background.known_fraction,
+                              recorder.status(pipe.now))
             cv2.imshow(WINDOW, view)
 
             key = cv2.waitKey(1) & 0xFF
-            if key in (27, ord("q")):
-                break
             if key in RECORDINGS:
-                recorder.start(key, now)
+                recorder.start(key, pipe.now)
             elif key == ord("s"):
                 save(recorder)
-            elif key == ord("r"):
-                background.reset()
-            elif key == ord("n"):
-                controller.new_box()
-            elif key == ord("d"):
-                show_debug = not show_debug
-            elif key == ord("h"):
-                show_hands = not show_hands
+            elif not pipe.handle_key(key):
+                break
     finally:
         save(recorder)
-        tracker.close()
-        segmenter.close()
+        pipe.close()
         cap.release()
         cv2.destroyAllWindows()
 

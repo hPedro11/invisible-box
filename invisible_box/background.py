@@ -21,7 +21,9 @@ class BackgroundModel:
     def __init__(self):
         self._open_k = _ellipse(config.MORPH_OPEN_KERNEL)
         self._close_k = _ellipse(config.MORPH_CLOSE_KERNEL)
-        self._margin_k = _ellipse(config.PERSON_DILATE)
+        # retângulo: a dilatação fica separável e bem mais rápida que com elipse
+        self._margin_k = cv2.getStructuringElement(
+            cv2.MORPH_RECT, (config.PERSON_DILATE, config.PERSON_DILATE))
         self.reset()
 
     def reset(self):
@@ -38,7 +40,7 @@ class BackgroundModel:
 
     @property
     def known_fraction(self):
-        return 0.0 if self._known is None else float(np.count_nonzero(self._known)) / self._known.size
+        return 0.0 if self._known is None else cv2.countNonZero(self._known) / self._known.size
 
     def image(self):
         return self._image
@@ -54,49 +56,70 @@ class BackgroundModel:
             return 0.0
         return cv2.countNonZero(cv2.bitwise_and(region_mask, self.unknown_mask())) / total
 
-    def person_mask(self, prob):
-        """Máscara binária (0/255) das pessoas a partir da probabilidade do segmentador."""
+    def person_mask(self, prob, shape):
+        """Máscara binária (0/255) das pessoas no tamanho `shape` do frame.
+
+        Limiar e morfologia rodam na resolução do segmentador (pequena, rápido);
+        a ampliação é linear + novo limiar, o que deixa a borda lisa em vez de
+        "em escadinha".
+        """
         mask = (prob > config.SEG_THRESHOLD).astype(np.uint8) * 255   # Lab02: limiarização
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self._open_k)    # Lab06: tira pontinhos
-        return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self._close_k)  # Lab06: fecha buracos
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self._close_k)  # Lab06: fecha buracos
+        h, w = shape[:2]
+        if mask.shape[:2] != (h, w):
+            mask = cv2.resize(mask, (w, h), interpolation=cv2.INTER_LINEAR)
+            _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
+        return mask
 
     def update(self, frame, person_mask):
         """Aprende o fundo só onde não há pessoa (com margem em volta delas)."""
-        free = cv2.bitwise_not(cv2.dilate(person_mask, self._margin_k))   # Lab05/Lab06
         if self._bg is None:
             self._bg = frame.astype(np.float32)
             self._known = np.zeros(frame.shape[:2], np.uint8)
             self._streak = np.zeros(frame.shape[:2], np.uint8)
+        self._frames += 1
+
+        # o fundo muda devagar: aprender a cada BG_UPDATE_EVERY frames basta
+        if self._image is None or self._frames % config.BG_UPDATE_EVERY == 0:
+            self._learn(frame, person_mask)
+        return self._image
+
+    def _learn(self, frame, person_mask):
+        free = cv2.bitwise_not(cv2.dilate(person_mask, self._margin_k))   # Lab05/Lab06
 
         # só confia no pixel depois de alguns frames seguidos sem pessoa: se o
         # segmentador falhar em um frame, um pedaço da pessoa não vira "fundo".
         cv2.add(self._streak, 1, dst=self._streak, mask=free)
         self._streak[free == 0] = 0
-        stable = ((self._streak >= config.BG_CONFIRM_FRAMES) * 255).astype(np.uint8)
+        confirm = max(1, -(-config.BG_CONFIRM_FRAMES // config.BG_UPDATE_EVERY))   # em atualizações
+        stable = cv2.compare(self._streak, confirm, cv2.CMP_GE)
 
-        # pixel confirmado pela primeira vez: copia direto; os outros: média que acompanha a luz
+        # pixel confirmado pela primeira vez: copia direto (taxa 1.0); os outros:
+        # média que acompanha a luz (Lab07)
         new = cv2.bitwise_and(stable, cv2.bitwise_not(self._known))
-        np.copyto(self._bg, frame, where=(new > 0)[..., None], casting="unsafe")
-        cv2.accumulateWeighted(frame, self._bg, config.BG_LEARNING_RATE, mask=stable)  # Lab07
+        cv2.accumulateWeighted(frame, self._bg, 1.0, mask=new)
+        cv2.accumulateWeighted(frame, self._bg, config.BG_LEARNING_RATE, mask=stable)
         cv2.bitwise_or(self._known, stable, dst=self._known)
 
         image = cv2.convertScaleAbs(self._bg)
-        unknown = self._known == 0
-        if unknown.any():
+        unknown = cv2.bitwise_not(self._known)
+        if cv2.countNonZero(unknown):
             if self._fill is None or self._frames % config.BG_INPAINT_EVERY == 0:
                 self._fill = self._inpaint(image, unknown)
-            np.copyto(image, self._fill, where=unknown[..., None])
+            cv2.copyTo(self._fill, unknown, image)
+        else:
+            self._fill = None
         self._image = image
-        self._frames += 1
 
     @staticmethod
     def _inpaint(image, unknown):
         """Preenche as áreas nunca vistas com os vizinhos (em escala menor, para ser rápido)."""
         h, w = unknown.shape
-        s = config.BG_INPAINT_SCALE
-        small = cv2.resize(image, (max(int(w * s), 1), max(int(h * s), 1)), interpolation=cv2.INTER_AREA)
-        small_mask = cv2.resize(unknown.astype(np.uint8) * 255, small.shape[1::-1],
-                                interpolation=cv2.INTER_NEAREST)
+        sw = min(config.BG_INPAINT_WIDTH, w)
+        sh = max(round(h * sw / w), 1)
+        small = cv2.resize(image, (sw, sh), interpolation=cv2.INTER_AREA)
+        small_mask = cv2.resize(unknown, (sw, sh), interpolation=cv2.INTER_NEAREST)
         small_mask = cv2.dilate(small_mask, _ellipse(3))
         filled = cv2.inpaint(small, small_mask, 5, cv2.INPAINT_TELEA)
         return cv2.resize(filled, (w, h), interpolation=cv2.INTER_LINEAR)
