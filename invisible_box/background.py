@@ -5,6 +5,12 @@ do MediaPipe diz onde estão as pessoas; tudo que NÃO é pessoa (com uma margem
 entra no fundo. Quando alguém se mexe, o pedaço de cenário que estava atrás
 aparece e é aprendido. O que nunca foi visto (alguém parado o tempo todo) é
 preenchido com inpaint a partir dos vizinhos até ser visto de verdade.
+
+Exposição: a webcam clareia/escurece sozinha (escurece quando a pessoa sai e
+só sobra parede branca). O fundo é guardado numa exposição de REFERÊNCIA; a
+cada atualização medimos o ganho atual da câmera na parte visível do fundo e
+aplicamos esse ganho ao fundo inteiro. Sem isso, o pedaço atrás da pessoa
+ficava "congelado" na exposição antiga e aparecia como uma mancha cinza.
 """
 import cv2
 import numpy as np
@@ -34,6 +40,7 @@ class BackgroundModel:
         self._image = None    # fundo final (uint8) usado pelo efeito
         self._frames = 0
         self._person_prev = None  # máscara anterior (para a histerese)
+        self._gain = np.ones(3, np.float32)  # exposição atual / exposição de referência (B, G, R)
 
     @property
     def ready(self):
@@ -45,6 +52,11 @@ class BackgroundModel:
 
     def image(self):
         return self._image
+
+    @property
+    def exposure_gain(self):
+        """Ganho atual da câmera em relação à exposição de referência (B, G, R)."""
+        return self._gain.copy()
 
     def unknown_mask(self):
         """255 onde o fundo nunca foi visto (preenchido por inpaint)."""
@@ -105,14 +117,26 @@ class BackgroundModel:
         confirm = max(1, -(-config.BG_CONFIRM_FRAMES // config.BG_UPDATE_EVERY))   # em atualizações
         stable = cv2.compare(self._streak, confirm, cv2.CMP_GE)
 
+        # ganho de exposição medido no fundo visível que já conhecíamos;
+        # o frame entra no fundo convertido para a exposição de referência
+        if config.BG_EXPOSURE_COMPENSATION:
+            self._update_gain(frame, cv2.bitwise_and(stable, self._known))
+            g = self._gain
+            target = cv2.multiply(frame.astype(np.float32),
+                                  (float(1.0 / g[0]), float(1.0 / g[1]), float(1.0 / g[2]), 0.0))
+        else:
+            target = frame
+
         # pixel confirmado pela primeira vez: copia direto (taxa 1.0); os outros:
         # média que acompanha a luz (Lab07)
         new = cv2.bitwise_and(stable, cv2.bitwise_not(self._known))
-        cv2.accumulateWeighted(frame, self._bg, 1.0, mask=new)
-        cv2.accumulateWeighted(frame, self._bg, config.BG_LEARNING_RATE, mask=stable)
+        cv2.accumulateWeighted(target, self._bg, 1.0, mask=new)
+        cv2.accumulateWeighted(target, self._bg, config.BG_LEARNING_RATE, mask=stable)
         cv2.bitwise_or(self._known, stable, dst=self._known)
 
-        image = cv2.convertScaleAbs(self._bg)
+        # fundo mostrado = fundo de referência x ganho atual da câmera
+        g = self._gain
+        image = cv2.convertScaleAbs(cv2.multiply(self._bg, (float(g[0]), float(g[1]), float(g[2]), 0.0)))
         unknown = cv2.bitwise_not(self._known)
         if cv2.countNonZero(unknown):
             if self._fill is None or self._frames % config.BG_INPAINT_EVERY == 0:
@@ -121,6 +145,26 @@ class BackgroundModel:
         else:
             self._fill = None
         self._image = image
+
+    def _update_gain(self, frame, visible):
+        """Mede quanto a câmera clareou/escureceu: frame / fundo na parte visível.
+
+        Usa versões pequenas (rápido) e ignora pixels estourados ou quase pretos,
+        onde a razão não diz nada. Razão das somas por canal = robusto a ruído.
+        """
+        h, w = visible.shape
+        sw = 160
+        sh = max(round(h * sw / w), 1)
+        f = cv2.resize(frame, (sw, sh), interpolation=cv2.INTER_AREA).astype(np.float32)
+        b = cv2.resize(self._bg, (sw, sh), interpolation=cv2.INTER_AREA)
+        m = cv2.resize(visible, (sw, sh), interpolation=cv2.INTER_NEAREST) > 0
+        m &= (f.min(axis=2) > 8) & (f.max(axis=2) < 247)
+        if np.count_nonzero(m) < 200:          # pouco fundo visível: mantém o ganho
+            return
+        gain = f[m].sum(axis=0) / np.maximum(b[m].sum(axis=0), 1.0)
+        gain = np.clip(gain, 0.3, 3.0).astype(np.float32)
+        a = config.BG_GAIN_SMOOTHING
+        self._gain = self._gain * a + gain * (1.0 - a)
 
     @staticmethod
     def _inpaint(image, unknown):

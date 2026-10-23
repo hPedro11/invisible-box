@@ -45,6 +45,8 @@ RESET_CONFIRM_FRAMES = 30  # frames com as duas mãos abertas para recriar a jan
 PERSON_DILATE = 21         # px: margem em volta das pessoas que NÃO entra no fundo
 BG_LEARNING_RATE = 0.05    # quão rápido o fundo se adapta onde não há pessoa
 BG_UPDATE_EVERY = 2        # aprende o fundo a cada N frames (ele muda devagar)
+BG_EXPOSURE_COMPENSATION = True  # acompanha o ajuste automático de exposição da webcam
+BG_GAIN_SMOOTHING = 0.7    # média móvel do ganho de exposição (0 = sem suavizar)
 BG_CONFIRM_FRAMES = 6      # frames seguidos sem pessoa até o pixel entrar no fundo
 BG_MISSING_WARN = 0.03     # avisa se mais que 3% da janela ainda não tem fundo conhecido
 BG_INPAINT_EVERY = 10      # frames entre os preenchimentos das áreas nunca vistas

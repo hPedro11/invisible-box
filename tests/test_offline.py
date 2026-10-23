@@ -213,7 +213,20 @@ def test_background(scene):
         flicker.update(frame, m if i != 5 else np.zeros_like(m))
     body = m > 0
     assert flicker.unknown_mask()[body].mean() > 250, "a pessoa entrou no fundo"
-    print(f"fundo com pessoa na cena: ok ({bgm.known_fraction * 100:.0f}% aprendido, erro {err:.1f})")
+    # a webcam muda a exposição sozinha: o fundo atrás da pessoa foi aprendido
+    # mais escuro (pessoa fora do quadro) e precisa acompanhar quando ela volta
+    expo = BackgroundModel()
+    dark = (scene * 0.75).astype(np.uint8)
+    for _ in range(20):                                  # sem ninguém, câmera escura
+        expo.update(dark, np.zeros(scene.shape[:2], np.uint8))
+    for i in range(40):                                  # pessoa volta, câmera clareia
+        frame, m = add_person(scene, 480, i)
+        expo.update(frame, m)
+    body = m > 0
+    err_expo = np.abs(expo.image()[body].astype(int) - scene[body].astype(int)).mean()
+    assert err_expo < 6, err_expo
+    print(f"fundo com pessoa na cena: ok ({bgm.known_fraction * 100:.0f}% aprendido, erro {err:.1f}, "
+          f"erro com exposição mudando {err_expo:.1f})")
     return bgm
 
 
