@@ -106,7 +106,7 @@ O programa pede 1280x720 à câmera e usa a resolução que ela entregar, sem es
 
 ### Como usar
 
-1. **Fundo:** o HUD mostra quanto do fundo já foi visto (`fundo 87%`). Pessoas que passam ou se mexem não atrapalham, mas a câmera não enxerga atrás de quem está parado: saia do quadro por ~2 segundos uma vez para o cenário atrás de você ser aprendido. Enquanto faltar fundo dentro da janela, aparece um aviso na tela, e o painel de debug (`D`) pinta essas áreas de magenta.
+1. **Fundo:** o HUD mostra quanto do fundo já foi visto (`fundo 87%`). Pessoas que passam ou se mexem não atrapalham, mas a câmera não enxerga atrás de quem está parado: saia do quadro por ~2 segundos uma vez para o cenário atrás de você ser aprendido. Enquanto faltar fundo dentro da janela (essa parte fica borrada), aparece no topo dela um aviso com a porcentagem que falta, e o painel de debug (`D`) pinta essas áreas de magenta.
 2. **Criar a janela:** aponte os dois indicadores para os cantos desejados (aparece um retângulo branco) e faça uma pinça rápida com qualquer uma das mãos: o indicador encosta no polegar e solta. A janela é salva com os cantos de logo antes da pinça.
 3. **Mover:** pinça dentro da janela e arraste. Solte com a mão em movimento para arremessar.
 4. **Redimensionar:** pinça em um dos cantos.

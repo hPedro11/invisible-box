@@ -62,6 +62,28 @@ def draw_box(frame, controller, t):
             cv2.circle(frame, _pt(c), 5, color, 1, cv2.LINE_AA)
 
 
+def draw_missing_notice(frame, box, missing):
+    """Aviso dentro da janela: parte do fundo dela nunca foi vista (fica borrada).
+
+    Aparece no topo da janela, onde é impossível não ver, com a porcentagem.
+    """
+    lines = [f"{missing * 100:.0f}% do fundo desta janela nunca foi visto (fica borrado)",
+             "saia do quadro por 2 s para a camera ver o que esta atras de voce"]
+    x, y, bw, bh = box.bbox()
+    h, w = frame.shape[:2]
+    sizes = [cv2.getTextSize(t, FONT, 0.55, 1)[0] for t in lines]
+    tw = max(sz[0] for sz in sizes) + 20
+    th = sum(sz[1] for sz in sizes) + 30
+    x0 = int(min(max(x + (bw - tw) // 2, 0), max(w - tw, 0)))
+    y0 = int(min(max(y + 12, 40), max(h - th - 40, 40)))
+    region = frame[y0:y0 + th, x0:x0 + tw]
+    frame[y0:y0 + th, x0:x0 + tw] = cv2.addWeighted(region, 0.35, np.zeros_like(region), 0.65, 0.0)
+    ty = y0 + 8
+    for text, (_, sh) in zip(lines, sizes):
+        ty += sh + 6
+        cv2.putText(frame, text, (x0 + 10, ty), FONT, 0.55, ORANGE, 1, cv2.LINE_AA)
+
+
 def draw_preview(frame, controller):
     """Retângulo entre os dois indicadores, no mesmo estilo da janela."""
     if controller.preview is None:
@@ -94,11 +116,8 @@ def draw_hands(frame, controller, show_skeleton):
                     FONT, 0.6, ORANGE, 2, cv2.LINE_AA)
 
 
-def draw_hud(frame, controller, fps, known=None, warning=None):
-    """Barra de cima: estado, quanto do fundo já foi visto e FPS. Barra de baixo: dica.
-
-    `warning` aparece em destaque logo acima da barra de baixo.
-    """
+def draw_hud(frame, controller, fps, known=None):
+    """Barra de cima: estado, quanto do fundo já foi visto e FPS. Barra de baixo: dica."""
     h, w = frame.shape[:2]
     cv2.rectangle(frame, (0, 0), (w, 34), (0, 0, 0), -1)
     cv2.putText(frame, f"{controller.state.value}", (10, 23), FONT, 0.6, CYAN, 2, cv2.LINE_AA)
@@ -108,10 +127,6 @@ def draw_hud(frame, controller, fps, known=None, warning=None):
     cv2.putText(frame, f"{fps:4.0f} FPS", (w - 95, 23), FONT, 0.55, WHITE, 1, cv2.LINE_AA)
     cv2.rectangle(frame, (0, h - 30), (w, h), (0, 0, 0), -1)
     cv2.putText(frame, controller.hint, (10, h - 10), FONT, 0.48, WHITE, 1, cv2.LINE_AA)
-    if warning:
-        (tw, th), _ = cv2.getTextSize(warning, FONT, 0.55, 2)
-        cv2.rectangle(frame, (0, h - 64), (tw + 20, h - 34), (0, 0, 0), -1)
-        cv2.putText(frame, warning, (10, h - 42), FONT, 0.55, ORANGE, 2, cv2.LINE_AA)
     cv2.putText(frame, "[N] nova  [R] reaprender fundo  [D] debug  [H] maos  [Q] sair",
                 (w - 470, 23), FONT, 0.42, (180, 180, 180), 1, cv2.LINE_AA)
 

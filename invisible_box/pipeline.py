@@ -15,8 +15,6 @@ from .glass import GlassEffect
 from .hand_tracker import HandTracker
 from .person_segmenter import PersonSegmenter
 
-# a câmera nunca viu o fundo atrás de quem não saiu do lugar
-MISSING_BG_WARNING = "Fundo atras de voce ainda nao foi visto: saia do quadro por 2 s"
 
 
 def open_camera(index, width, height):
@@ -76,22 +74,23 @@ class Pipeline:
         controller.update(hands, now, dt)
 
         # 4) Efeito
-        warning = None
+        missing = 0.0
         if controller.box is not None:
             box_mask = controller.box.mask(frame.shape, now)
             view = self.glass.render(frame, background, person, box_mask, controller.box.bbox(), now)
-            if self.background.missing_fraction(box_mask) > config.BG_MISSING_WARN:
-                warning = MISSING_BG_WARNING
+            missing = self.background.missing_fraction(box_mask)
         else:
             view = frame.copy()
 
         # 5) Interface
         overlay.draw_box(view, controller, now)
+        if missing > config.BG_MISSING_WARN:
+            overlay.draw_missing_notice(view, controller.box, missing)
         overlay.draw_preview(view, controller)
         overlay.draw_hands(view, controller, self.show_hands)
         if self.show_debug:
             overlay.debug_panel(view, background, person, self.background.unknown_mask())
-        overlay.draw_hud(view, controller, self.fps, self.background.known_fraction, warning)
+        overlay.draw_hud(view, controller, self.fps, self.background.known_fraction)
         return view
 
     def handle_key(self, key):
@@ -111,3 +110,4 @@ class Pipeline:
     def close(self):
         self.tracker.close()
         self.segmenter.close()
+        self.background.close()

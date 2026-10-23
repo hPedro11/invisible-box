@@ -50,7 +50,7 @@ BG_GAIN_SMOOTHING = 0.7    # média móvel do ganho de exposição (0 = sem suav
 BG_CONFIRM_FRAMES = 6      # frames seguidos sem pessoa até o pixel entrar no fundo
 BG_MISSING_WARN = 0.03     # avisa se mais que 3% da janela ainda não tem fundo conhecido
 BG_INPAINT_EVERY = 10      # frames entre os preenchimentos das áreas nunca vistas
-BG_INPAINT_WIDTH = 240     # largura em que o inpaint roda (menor = mais rápido)
+BG_INPAINT_WIDTH = 480     # largura do inpaint (maior = chute mais nítido; roda em paralelo)
 MORPH_OPEN_KERNEL = 5      # remove ruído pequeno da máscara da pessoa (em PROCESS_WIDTH)
 MORPH_CLOSE_KERNEL = 9     # fecha buracos pequenos (em PROCESS_WIDTH)
 

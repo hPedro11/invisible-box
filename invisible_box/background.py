@@ -12,6 +12,8 @@ cada atualização medimos o ganho atual da câmera na parte visível do fundo e
 aplicamos esse ganho ao fundo inteiro. Sem isso, o pedaço atrás da pessoa
 ficava "congelado" na exposição antiga e aparecia como uma mancha cinza.
 """
+from concurrent.futures import ThreadPoolExecutor
+
 import cv2
 import numpy as np
 
@@ -30,6 +32,7 @@ class BackgroundModel:
         # retângulo: a dilatação fica separável e bem mais rápida que com elipse
         self._margin_k = cv2.getStructuringElement(
             cv2.MORPH_RECT, (config.PERSON_DILATE, config.PERSON_DILATE))
+        self._executor = None   # thread do inpaint (criada só quando precisa)
         self.reset()
 
     def reset(self):
@@ -37,6 +40,7 @@ class BackgroundModel:
         self._known = None    # uint8 0/255: pixels que já foram vistos sem pessoa
         self._streak = None   # uint8: frames seguidos em que o pixel está sem pessoa
         self._fill = None     # cache do inpaint das áreas nunca vistas
+        self._pending = None  # inpaint rodando em paralelo
         self._image = None    # fundo final (uint8) usado pelo efeito
         self._frames = 0
         self._person_prev = None  # máscara anterior (para a histerese)
@@ -139,12 +143,36 @@ class BackgroundModel:
         image = cv2.convertScaleAbs(cv2.multiply(self._bg, (float(g[0]), float(g[1]), float(g[2]), 0.0)))
         unknown = cv2.bitwise_not(self._known)
         if cv2.countNonZero(unknown):
-            if self._fill is None or self._frames % config.BG_INPAINT_EVERY == 0:
-                self._fill = self._inpaint(image, unknown)
+            self._refresh_fill(image, unknown)
             cv2.copyTo(self._fill, unknown, image)
         else:
             self._fill = None
         self._image = image
+
+    def _refresh_fill(self, image, unknown):
+        """Mantém o "chute" das áreas nunca vistas atualizado.
+
+        O inpaint em resolução boa leva dezenas de ms; ele roda numa thread em
+        paralelo (o OpenCV libera o Python enquanto calcula) e o resultado entra
+        quando fica pronto. Até lá, vale o chute anterior. Só o primeiro é
+        calculado na hora, porque ainda não há nenhum.
+        """
+        if self._pending is not None and self._pending.done():
+            fill = self._pending.result()
+            self._pending = None
+            if fill.shape == image.shape:
+                self._fill = fill
+        if self._fill is None or self._fill.shape != image.shape:
+            self._fill = self._inpaint(image, unknown)
+        elif self._pending is None and self._frames % config.BG_INPAINT_EVERY == 0:
+            if self._executor is None:
+                self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="inpaint")
+            self._pending = self._executor.submit(self._inpaint, image.copy(), unknown.copy())
+
+    def close(self):
+        if self._executor is not None:
+            self._executor.shutdown(wait=False, cancel_futures=True)
+            self._executor = None
 
     def _update_gain(self, frame, visible):
         """Mede quanto a câmera clareou/escureceu: frame / fundo na parte visível.
