@@ -42,19 +42,23 @@ RESET_CONFIRM_FRAMES = 30  # frames com as duas mãos abertas para recriar a jan
 # --- Fundo aprendido com pessoas na cena (Lab07 / Lab06) --------------------
 PERSON_DILATE = 21         # px: margem em volta das pessoas que NÃO entra no fundo
 BG_LEARNING_RATE = 0.05    # quão rápido o fundo se adapta onde não há pessoa
+BG_CONFIRM_FRAMES = 6      # frames seguidos sem pessoa até o pixel entrar no fundo
+BG_MISSING_WARN = 0.03     # avisa se mais que 3% da janela ainda não tem fundo conhecido
 BG_INPAINT_EVERY = 10      # frames entre os preenchimentos das áreas nunca vistas
 BG_INPAINT_SCALE = 0.25    # escala do inpaint (menor = mais rápido)
 MORPH_OPEN_KERNEL = 5      # remove ruído pequeno da máscara da pessoa
 MORPH_CLOSE_KERNEL = 9     # fecha buracos pequenos
 
 # --- Efeito de vidro transparente (Lab04) -----------------------------------
-GLASS_EDGE_BLUR = 9        # suavização da silhueta (ímpar). Menor = contorno mais fino
-GLASS_DETAIL = 1.2         # peso dos detalhes internos (dedos, braços, dobras da roupa)
-GLASS_DETAIL_BLUR = 5      # suavização dos detalhes internos (ímpar)
-GLASS_STRENGTH = 16.0      # deslocamento máximo (px) da refração
+GLASS_BEVEL = 16           # px: largura da borda de vidro (o "tubo" do contorno)
+GLASS_RIDGES = 0.7         # força das linhas de vidro internas (dedos, braços, rosto)
+GLASS_RIDGE_WIDTH = 11     # largura das linhas internas (ímpar)
+GLASS_RIDGE_MIN_LENGTH = 90  # px: linhas internas mais curtas que isso são ignoradas
+GLASS_CANNY = (40, 110)    # limiares do Canny que acha as linhas internas
+GLASS_STRENGTH = 26.0      # deslocamento máximo (px) da refração
 GLASS_CHROMA = 0.35        # separação de cores (aberração cromática) nas bordas
 GLASS_SHIMMER = 1.5        # ondulação interna (px), animada no tempo
-GLASS_HIGHLIGHT = 0.45     # intensidade do brilho nas bordas
+GLASS_HIGHLIGHT = 0.55     # intensidade do brilho (reflexo da luz no vidro)
 GLASS_TINT = (255, 235, 215)  # BGR do reflexo (azul bem claro)
 
 # --- Janela ---------------------------------------------------------------

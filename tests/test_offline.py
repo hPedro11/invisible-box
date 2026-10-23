@@ -202,6 +202,13 @@ def test_background(scene):
     frame, m = add_person(scene, 480)
     still.update(frame, m)
     assert still.known_fraction < 0.9 and still.image() is not None
+    # o segmentador "pisca" e perde a pessoa por 1 frame: ela NÃO pode virar fundo
+    flicker = BackgroundModel()
+    frame, m = add_person(scene, 480)
+    for i in range(10):
+        flicker.update(frame, m if i != 5 else np.zeros_like(m))
+    body = m > 0
+    assert flicker.unknown_mask()[body].mean() > 250, "a pessoa entrou no fundo"
     print(f"fundo com pessoa na cena: ok ({bgm.known_fraction * 100:.0f}% aprendido, erro {err:.1f})")
     return bgm
 

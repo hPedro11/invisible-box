@@ -15,7 +15,7 @@ A janela não é estática: ela pode ser **arrastada, redimensionada, girada e a
 - **Criar a janela com as mãos:** a ponta de cada indicador marca um canto do retângulo; uma pinça rápida (indicador encosta no polegar e solta) salva a área.
 - **Detecção de pessoas:** segmentação de pessoas do MediaPipe (`ImageSegmenter`), limpa com limiarização e morfologia. Funciona com várias pessoas e com pessoas paradas.
 - **Fundo aprendido com gente na cena:** não é preciso sair da frente da câmera. A cada frame, tudo que não é pessoa entra no fundo; quando alguém se mexe, o cenário que estava atrás é aprendido. O que nunca foi visto é preenchido com *inpainting* até aparecer.
-- **Efeito de vidro transparente:** a pessoa é trocada pelo fundo e só sobra a refração. Um "relevo" feito da silhueta borrada mais os detalhes internos da pessoa (dedos, braços, roupa) passa pelo Sobel e vira mapa de deslocamento (`cv2.remap`). Cada canal de cor é deslocado com força diferente (aberração cromática), o que dá as franjas coloridas nas bordas.
+- **Efeito de vidro transparente:** a pessoa é trocada pelo fundo e só sobra a refração. O relevo do vidro tem uma borda arredondada em volta do corpo (`distanceTransform`) e filetes internos nos contornos longos da pessoa, como dedos, braços e rosto (Canny + contornos filtrados por comprimento). O Sobel desse relevo vira mapa de deslocamento (`cv2.remap`), cada canal de cor é deslocado com força diferente (aberração cromática) e um reflexo de luz dá volume ao vidro.
 - **Manipulação da janela por gestos:**
   - pinça dentro da janela → arrastar;
   - pinça em um canto → redimensionar;
@@ -28,8 +28,8 @@ A janela não é estática: ela pode ser **arrastada, redimensionada, girada e a
 |---|---|
 | Manipulação de pixels, canais e desenho (`line`, `putText`, `fillPoly`) | Lab01 |
 | Limiarização da máscara de pessoas | Lab02 |
-| Filtros de convolução: Gaussian Blur, passa-alta e Sobel | Lab04 |
-| Máscaras, operações bitwise e canais de cor separados | Lab05 |
+| Filtros de convolução: Gaussian Blur, Sobel e Canny | Lab04 |
+| Máscaras, operações bitwise, canais de cor e contornos (`findContours`) | Lab05 |
 | Morfologia (abertura, fechamento e dilatação) | Lab06 |
 | Modelo de fundo acumulado (`accumulateWeighted`) | Lab07 |
 | Interação e seleção de região (ROI) | Lab11 |
@@ -65,7 +65,7 @@ flowchart TD
 
     I --> M[Interseção das máscaras - bitwise_and]
     L --> M
-    M --> N[Relevo: silhueta borrada + detalhes internos<br/>Sobel]
+    M --> N[Relevo: borda distanceTransform + contornos longos Canny<br/>Sobel]
     J --> O
     N --> O[Distorção do fundo por canal - remap]
     O --> P[Composição final + HUD]
@@ -104,7 +104,7 @@ python main.py                 # use --camera 1 para outra câmera, --debug para
 
 ### Como usar
 
-1. **Fundo:** não precisa sair da frente da câmera. O HUD mostra quanto do fundo já foi visto (`fundo 87%`); mexa-se um pouco para que o cenário atrás de você também seja aprendido.
+1. **Fundo:** o HUD mostra quanto do fundo já foi visto (`fundo 87%`). Pessoas que passam ou se mexem não atrapalham, mas a câmera não enxerga atrás de quem está parado: saia do quadro por ~2 segundos uma vez para o cenário atrás de você ser aprendido. Enquanto faltar fundo dentro da janela, aparece um aviso na tela, e o painel de debug (`D`) pinta essas áreas de magenta.
 2. **Criar a janela:** aponte os dois indicadores para os cantos desejados (aparece um retângulo branco) e faça uma pinça rápida com qualquer uma das mãos: o indicador encosta no polegar e solta. A janela é salva com os cantos de logo antes da pinça.
 3. **Mover:** pinça dentro da janela e arraste. Solte com a mão em movimento para arremessar.
 4. **Redimensionar:** pinça em um dos cantos.

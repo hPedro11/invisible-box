@@ -29,6 +29,7 @@ from invisible_box.controller import BoxController
 from invisible_box.glass import GlassEffect
 from invisible_box.hand_tracker import HandTracker
 from invisible_box.person_segmenter import PersonSegmenter
+from main import MISSING_BG_WARNING
 
 WINDOW = "Invisible Box - calibracao"
 SLIDERS = "Ajustes"
@@ -41,8 +42,9 @@ TRACKBARS = {
     "SEG_THRESHOLD x100": ("SEG_THRESHOLD", 100, 100),
     "PINCH_ON x100": ("PINCH_ON", 100, 100),
     "PINCH_OFF x100": ("PINCH_OFF", 100, 100),
-    "GLASS_EDGE_BLUR": ("GLASS_EDGE_BLUR", 41, 1),
-    "GLASS_DETAIL x10": ("GLASS_DETAIL", 40, 10),
+    "GLASS_BEVEL": ("GLASS_BEVEL", 40, 1),
+    "GLASS_RIDGES x10": ("GLASS_RIDGES", 30, 10),
+    "GLASS_RIDGE_MIN_LENGTH": ("GLASS_RIDGE_MIN_LENGTH", 300, 1),
     "GLASS_STRENGTH": ("GLASS_STRENGTH", 60, 1),
     "GLASS_CHROMA x100": ("GLASS_CHROMA", 100, 100),
     "GLASS_SHIMMER x10": ("GLASS_SHIMMER", 100, 10),
@@ -66,7 +68,7 @@ def parse_args():
 
 def create_sliders():
     cv2.namedWindow(SLIDERS, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(SLIDERS, 480, 400)
+    cv2.resizeWindow(SLIDERS, 480, 440)
     for name, (attr, maximum, scale) in TRACKBARS.items():
         value = int(round(getattr(config, attr) * scale))
         cv2.createTrackbar(name, SLIDERS, min(value, maximum), maximum, lambda _v: None)
@@ -77,7 +79,6 @@ def read_sliders(controller):
     for name, (attr, _maximum, scale) in TRACKBARS.items():
         v = cv2.getTrackbarPos(name, SLIDERS)
         setattr(config, attr, v / scale if scale != 1 else v)
-    config.GLASS_EDGE_BLUR = max(int(config.GLASS_EDGE_BLUR), 1) | 1
     config.GLASS_STRENGTH = float(config.GLASS_STRENGTH)
     if config.PINCH_OFF <= config.PINCH_ON:  # a histerese precisa de OFF > ON
         config.PINCH_OFF = config.PINCH_ON + 0.01
@@ -238,10 +239,13 @@ def main():
             controller.update(hands, now, dt)
             recorder.feed(now, controller.hands)
 
+            warning = None
             if controller.box is not None:
                 box_mask = controller.box.mask(frame.shape, now)
                 view = glass.render(frame, background.image(), person, box_mask,
                                     controller.box.bbox(), now)
+                if background.missing_fraction(box_mask) > config.BG_MISSING_WARN:
+                    warning = MISSING_BG_WARNING
             else:
                 view = frame.copy()
 
@@ -249,8 +253,8 @@ def main():
             overlay.draw_preview(view, controller)
             overlay.draw_hands(view, controller, show_hands)
             if show_debug:
-                overlay.debug_panel(view, background.image(), person)
-            overlay.draw_hud(view, controller, fps, background.known_fraction)
+                overlay.debug_panel(view, background.image(), person, background.unknown_mask())
+            overlay.draw_hud(view, controller, fps, background.known_fraction, warning)
             draw_measurements(view, controller, person, background.known_fraction,
                               recorder.status(now))
             cv2.imshow(WINDOW, view)

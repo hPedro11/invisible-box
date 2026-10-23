@@ -20,6 +20,8 @@ from invisible_box.hand_tracker import HandTracker
 from invisible_box.person_segmenter import PersonSegmenter
 
 WINDOW = "Invisible Box"
+# a câmera nunca viu o fundo atrás de quem não saiu do lugar
+MISSING_BG_WARNING = "Fundo atras de voce ainda nao foi visto: saia do quadro por 2 s"
 
 
 def parse_args():
@@ -82,10 +84,13 @@ def main():
             controller.update(hands, now, dt)
 
             # 4) Efeito
+            warning = None
             if controller.box is not None:
                 box_mask = controller.box.mask(frame.shape, now)
                 view = glass.render(frame, background.image(), person, box_mask,
                                     controller.box.bbox(), now)
+                if background.missing_fraction(box_mask) > config.BG_MISSING_WARN:
+                    warning = MISSING_BG_WARNING
             else:
                 view = frame.copy()
 
@@ -94,8 +99,8 @@ def main():
             overlay.draw_preview(view, controller)
             overlay.draw_hands(view, controller, show_hands)
             if show_debug:
-                overlay.debug_panel(view, background.image(), person)
-            overlay.draw_hud(view, controller, fps, background.known_fraction)
+                overlay.debug_panel(view, background.image(), person, background.unknown_mask())
+            overlay.draw_hud(view, controller, fps, background.known_fraction, warning)
             cv2.imshow(WINDOW, view)
 
             key = cv2.waitKey(1) & 0xFF

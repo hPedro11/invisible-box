@@ -72,8 +72,11 @@ def draw_hands(frame, controller, show_skeleton):
                     FONT, 0.6, ORANGE, 2, cv2.LINE_AA)
 
 
-def draw_hud(frame, controller, fps, known=None):
-    """Barra de cima: estado, quanto do fundo já foi visto e FPS. Barra de baixo: dica."""
+def draw_hud(frame, controller, fps, known=None, warning=None):
+    """Barra de cima: estado, quanto do fundo já foi visto e FPS. Barra de baixo: dica.
+
+    `warning` aparece em destaque logo acima da barra de baixo.
+    """
     h, w = frame.shape[:2]
     cv2.rectangle(frame, (0, 0), (w, 34), (0, 0, 0), -1)
     cv2.putText(frame, f"{controller.state.value}", (10, 23), FONT, 0.6, CYAN, 2, cv2.LINE_AA)
@@ -83,15 +86,26 @@ def draw_hud(frame, controller, fps, known=None):
     cv2.putText(frame, f"{fps:4.0f} FPS", (w - 95, 23), FONT, 0.55, WHITE, 1, cv2.LINE_AA)
     cv2.rectangle(frame, (0, h - 30), (w, h), (0, 0, 0), -1)
     cv2.putText(frame, controller.hint, (10, h - 10), FONT, 0.48, WHITE, 1, cv2.LINE_AA)
+    if warning:
+        (tw, th), _ = cv2.getTextSize(warning, FONT, 0.55, 2)
+        cv2.rectangle(frame, (0, h - 64), (tw + 20, h - 34), (0, 0, 0), -1)
+        cv2.putText(frame, warning, (10, h - 42), FONT, 0.55, ORANGE, 2, cv2.LINE_AA)
     cv2.putText(frame, "[N] nova  [R] reaprender fundo  [D] debug  [H] maos  [Q] sair",
                 (w - 470, 23), FONT, 0.42, (180, 180, 180), 1, cv2.LINE_AA)
 
 
-def debug_panel(frame, background, person_mask):
-    """Miniaturas para a apresentação: fundo aprendido e máscara da pessoa."""
+def debug_panel(frame, background, person_mask, unknown=None):
+    """Miniaturas para a apresentação: fundo aprendido e máscara da pessoa.
+
+    Com `unknown`, as áreas de fundo nunca vistas (só "chutadas" pelo inpaint)
+    aparecem em magenta.
+    """
     h, w = frame.shape[:2]
     tw, th = w // 4, h // 4
     bg_small = cv2.resize(background, (tw, th))
+    if unknown is not None:
+        miss = cv2.resize(unknown, (tw, th), interpolation=cv2.INTER_NEAREST) > 0
+        bg_small[miss] = (bg_small[miss] * 0.4 + np.array([255, 0, 255]) * 0.6).astype(np.uint8)
     mask_small = cv2.cvtColor(cv2.resize(person_mask, (tw, th)), cv2.COLOR_GRAY2BGR)
     y = 40
     frame[y:y + th, w - tw - 10:w - 10] = bg_small
