@@ -6,5 +6,7 @@ venv/
 .idea/
 .DS_Store
 models/*.task
+models/*.tflite
 capturas/
 tests/output/
+calibracao.json

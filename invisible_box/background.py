@@ -1,8 +1,10 @@
-"""Modelo de fundo da cena inteira e máscara da pessoa (Lab07 + Lab06).
+"""Fundo da cena aprendido mesmo com pessoas na frente (Lab07 + Lab06).
 
-O fundo é da cena INTEIRA (não só da janela), então a janela pode ser movida
-para qualquer lugar. Ele se atualiza devagar, mas só onde não há pessoa, para
-acompanhar mudanças de luz sem "aprender" quem está na frente.
+Não existe mais a etapa "saia da frente da câmera". A cada frame, a segmentação
+do MediaPipe diz onde estão as pessoas; tudo que NÃO é pessoa (com uma margem)
+entra no fundo. Quando alguém se mexe, o pedaço de cenário que estava atrás
+aparece e é aprendido. O que nunca foi visto (alguém parado o tempo todo) é
+preenchido com inpaint a partir dos vizinhos até ser visto de verdade.
 """
 import cv2
 import numpy as np
@@ -10,51 +12,72 @@ import numpy as np
 from . import config
 
 
+def _ellipse(size):
+    size = max(int(size), 1)
+    return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
+
+
 class BackgroundModel:
     def __init__(self):
-        self._open_k = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, (config.MORPH_OPEN_KERNEL, config.MORPH_OPEN_KERNEL))
-        self._close_k = cv2.getStructuringElement(
-            cv2.MORPH_ELLIPSE, (config.MORPH_CLOSE_KERNEL, config.MORPH_CLOSE_KERNEL))
+        self._open_k = _ellipse(config.MORPH_OPEN_KERNEL)
+        self._close_k = _ellipse(config.MORPH_CLOSE_KERNEL)
+        self._margin_k = _ellipse(config.PERSON_DILATE)
         self.reset()
 
     def reset(self):
-        self._acc = None
-        self._count = 0
-        self._bg = None  # float32, mesma forma do frame
+        self._bg = None       # float32, média do que já foi visto sem pessoa
+        self._known = None    # uint8 0/255: pixels que já foram vistos sem pessoa
+        self._fill = None     # cache do inpaint das áreas nunca vistas
+        self._image = None    # fundo final (uint8) usado pelo efeito
+        self._frames = 0
 
     @property
     def ready(self):
-        return self._bg is not None
+        return self._image is not None
 
     @property
-    def progress(self):
-        return min(self._count / config.CALIBRATION_FRAMES, 1.0)
-
-    def add_calibration_frame(self, frame):
-        """Média de vários frames da cena vazia: reduz o ruído da câmera."""
-        f = frame.astype(np.float32)
-        self._acc = f if self._acc is None else self._acc + f
-        self._count += 1
-        if self._count >= config.CALIBRATION_FRAMES:
-            self._bg = self._acc / self._count
+    def known_fraction(self):
+        return 0.0 if self._known is None else float(np.count_nonzero(self._known)) / self._known.size
 
     def image(self):
-        return cv2.convertScaleAbs(self._bg)
+        return self._image
 
-    def person_mask(self, frame):
-        """Máscara binária (0/255) de tudo que difere do fundo."""
-        diff = cv2.absdiff(frame, self.image())          # Lab07 (Desafio 1)
-        diff = diff.max(axis=2)                          # maior diferença entre B, G e R
-        diff = cv2.GaussianBlur(diff, (5, 5), 0)         # Lab04: reduz ruído do sensor
-        _, mask = cv2.threshold(diff, config.DIFF_THRESHOLD, 255, cv2.THRESH_BINARY)
+    def person_mask(self, prob):
+        """Máscara binária (0/255) das pessoas a partir da probabilidade do segmentador."""
+        mask = (prob > config.SEG_THRESHOLD).astype(np.uint8) * 255   # Lab02: limiarização
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, self._open_k)    # Lab06: tira pontinhos
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self._close_k)  # Lab06: fecha buracos
-        if config.MASK_DILATE:
-            mask = cv2.dilate(mask, self._open_k, iterations=config.MASK_DILATE)
-        return mask
+        return cv2.morphologyEx(mask, cv2.MORPH_CLOSE, self._close_k)  # Lab06: fecha buracos
 
     def update(self, frame, person_mask):
-        """Aprende o fundo devagar, apenas fora da pessoa."""
-        background_only = cv2.bitwise_not(person_mask)
-        cv2.accumulateWeighted(frame, self._bg, config.BG_LEARNING_RATE, mask=background_only)
+        """Aprende o fundo só onde não há pessoa (com margem em volta delas)."""
+        free = cv2.bitwise_not(cv2.dilate(person_mask, self._margin_k))   # Lab05/Lab06
+        if self._bg is None:
+            self._bg = frame.astype(np.float32)
+            self._known = np.zeros(frame.shape[:2], np.uint8)
+
+        # pixel visto pela primeira vez: copia direto; os outros: média que acompanha a luz
+        new = cv2.bitwise_and(free, cv2.bitwise_not(self._known))
+        np.copyto(self._bg, frame, where=(new > 0)[..., None], casting="unsafe")
+        cv2.accumulateWeighted(frame, self._bg, config.BG_LEARNING_RATE, mask=free)  # Lab07
+        cv2.bitwise_or(self._known, free, dst=self._known)
+
+        image = cv2.convertScaleAbs(self._bg)
+        unknown = self._known == 0
+        if unknown.any():
+            if self._fill is None or self._frames % config.BG_INPAINT_EVERY == 0:
+                self._fill = self._inpaint(image, unknown)
+            np.copyto(image, self._fill, where=unknown[..., None])
+        self._image = image
+        self._frames += 1
+
+    @staticmethod
+    def _inpaint(image, unknown):
+        """Preenche as áreas nunca vistas com os vizinhos (em escala menor, para ser rápido)."""
+        h, w = unknown.shape
+        s = config.BG_INPAINT_SCALE
+        small = cv2.resize(image, (max(int(w * s), 1), max(int(h * s), 1)), interpolation=cv2.INTER_AREA)
+        small_mask = cv2.resize(unknown.astype(np.uint8) * 255, small.shape[1::-1],
+                                interpolation=cv2.INTER_NEAREST)
+        small_mask = cv2.dilate(small_mask, _ellipse(3))
+        filled = cv2.inpaint(small, small_mask, 5, cv2.INPAINT_TELEA)
+        return cv2.resize(filled, (w, h), interpolation=cv2.INTER_LINEAR)

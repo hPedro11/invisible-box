@@ -1,4 +1,4 @@
-"""Desenhos na tela: contorno da janela, mãos, HUD e tela de calibração (Lab01)."""
+"""Desenhos na tela: contorno da janela, mãos, HUD e painel de debug (Lab01)."""
 import cv2
 import numpy as np
 
@@ -42,14 +42,18 @@ def draw_box(frame, controller, t):
 
 
 def draw_preview(frame, controller):
+    """Retângulo entre os dois indicadores; fica verde durante a pinça rápida."""
     if controller.preview is None:
         return
     p1, p2 = controller.preview
-    cv2.rectangle(frame, _pt(p1), _pt(p2), WHITE, 1, cv2.LINE_AA)
-    prog = controller.define_progress
-    if prog > 0:
+    if controller.tap_pending:
+        cv2.rectangle(frame, _pt(p1), _pt(p2), GREEN, 2, cv2.LINE_AA)
         x, y = _pt(np.minimum(p1, p2))
-        cv2.rectangle(frame, (x, y - 10), (x + int(120 * prog), y - 4), GREEN, -1)
+        cv2.putText(frame, "solte a pinca para salvar", (x, y - 8), FONT, 0.5, GREEN, 1, cv2.LINE_AA)
+    else:
+        cv2.rectangle(frame, _pt(p1), _pt(p2), WHITE, 1, cv2.LINE_AA)
+    for p in (p1, p2):
+        cv2.circle(frame, _pt(p), 6, GREEN if controller.tap_pending else WHITE, 1, cv2.LINE_AA)
 
 
 def draw_hands(frame, controller, show_skeleton):
@@ -58,7 +62,9 @@ def draw_hands(frame, controller, show_skeleton):
             for a, b in HAND_CONNECTIONS:
                 cv2.line(frame, _pt(h.points[a]), _pt(h.points[b]), (200, 200, 200), 1, cv2.LINE_AA)
         color = GREEN if h.pinch.pinching else WHITE
-        cv2.circle(frame, _pt(h.point), 9 if h.pinch.pinching else 5, color,
+        # definindo a janela, o que importa é a ponta do indicador; depois, o ponto da pinça
+        p = h.tip if controller.state == State.DEFINING else h.point
+        cv2.circle(frame, _pt(p), 9 if h.pinch.pinching else 5, color,
                    -1 if h.pinch.pinching else 2, cv2.LINE_AA)
     prog = controller.reset_progress
     if prog > 0:
@@ -66,28 +72,19 @@ def draw_hands(frame, controller, show_skeleton):
                     FONT, 0.6, ORANGE, 2, cv2.LINE_AA)
 
 
-def draw_hud(frame, controller, fps):
+def draw_hud(frame, controller, fps, known=None):
+    """Barra de cima: estado, quanto do fundo já foi visto e FPS. Barra de baixo: dica."""
     h, w = frame.shape[:2]
     cv2.rectangle(frame, (0, 0), (w, 34), (0, 0, 0), -1)
     cv2.putText(frame, f"{controller.state.value}", (10, 23), FONT, 0.6, CYAN, 2, cv2.LINE_AA)
+    if known is not None:
+        cv2.putText(frame, f"fundo {known * 100:3.0f}%", (215, 23), FONT, 0.5,
+                    GREEN if known > 0.97 else ORANGE, 1, cv2.LINE_AA)
     cv2.putText(frame, f"{fps:4.0f} FPS", (w - 95, 23), FONT, 0.55, WHITE, 1, cv2.LINE_AA)
     cv2.rectangle(frame, (0, h - 30), (w, h), (0, 0, 0), -1)
     cv2.putText(frame, controller.hint, (10, h - 10), FONT, 0.48, WHITE, 1, cv2.LINE_AA)
-    cv2.putText(frame, "[N] nova  [R] recalibrar  [D] debug  [H] maos  [Q] sair",
-                (w - 420, 23), FONT, 0.42, (180, 180, 180), 1, cv2.LINE_AA)
-
-
-def draw_calibration(frame, progress):
-    h, w = frame.shape[:2]
-    shade = (frame * 0.4).astype(np.uint8)
-    frame[:] = shade
-    msg = "Saia da frente da camera"
-    (tw, _), _ = cv2.getTextSize(msg, FONT, 1.0, 2)
-    cv2.putText(frame, msg, ((w - tw) // 2, h // 2 - 20), FONT, 1.0, WHITE, 2, cv2.LINE_AA)
-    bar_w = 360
-    x0 = (w - bar_w) // 2
-    cv2.rectangle(frame, (x0, h // 2 + 10), (x0 + bar_w, h // 2 + 26), (90, 90, 90), 1)
-    cv2.rectangle(frame, (x0, h // 2 + 10), (x0 + int(bar_w * progress), h // 2 + 26), CYAN, -1)
+    cv2.putText(frame, "[N] nova  [R] reaprender fundo  [D] debug  [H] maos  [Q] sair",
+                (w - 470, 23), FONT, 0.42, (180, 180, 180), 1, cv2.LINE_AA)
 
 
 def debug_panel(frame, background, person_mask):
@@ -99,6 +96,6 @@ def debug_panel(frame, background, person_mask):
     y = 40
     frame[y:y + th, w - tw - 10:w - 10] = bg_small
     frame[y + th + 6:y + 2 * th + 6, w - tw - 10:w - 10] = mask_small
-    for label, ly in (("fundo", y), ("mascara", y + th + 6)):
-        cv2.rectangle(frame, (w - tw - 10, ly), (w - tw + 62, ly + 20), (0, 0, 0), -1)
+    for label, ly in (("fundo aprendido", y), ("pessoas", y + th + 6)):
+        cv2.rectangle(frame, (w - tw - 10, ly), (w - tw + 120, ly + 20), (0, 0, 0), -1)
         cv2.putText(frame, label, (w - tw - 5, ly + 15), FONT, 0.45, CYAN, 1, cv2.LINE_AA)

@@ -14,6 +14,7 @@ from invisible_box.box import InvisibleBox
 from invisible_box.controller import BoxController, State
 from invisible_box.glass import GlassEffect
 from invisible_box.hand_tracker import Hand
+from invisible_box.person_segmenter import PersonSegmenter
 
 # --- mão sintética (21 landmarks, unidades de "tamanho da mão") -------------
 OPEN = np.array([
@@ -26,18 +27,21 @@ OPEN = np.array([
 ], dtype=np.float32)
 
 
-def make_hand(target, pinch=False, fist=False, label="Right", scale=80.0):
+def make_hand(target, pinch=False, fist=False, point=False, label="Right", scale=80.0):
+    """Mão sintética. Com point=True o indicador aponta (outros dedos dobrados) e
+    `target` é a ponta do indicador; senão `target` é o ponto da pinça."""
     pts = OPEN.copy()
+    curled = [(5, 8), (9, 12), (13, 16), (17, 20)] if fist else [(9, 12), (13, 16), (17, 20)] if point else []
+    for mcp, tip in curled:
+        pts[tip] = pts[mcp] * 0.8           # ponta encolhida perto da palma
+        pts[tip - 1] = pts[mcp] * 0.85
     if fist:
-        for mcp, tip in [(5, 8), (9, 12), (13, 16), (17, 20)]:
-            pts[tip] = pts[mcp] * 0.8           # ponta encolhida perto da palma
-            pts[tip - 1] = pts[mcp] * 0.85
         pts[4] = pts[5] * 0.9
     if pinch:
         pts[4] = pts[8] + np.array([0.05, 0.0])
     pts *= scale
-    pinch_pt = (pts[4] + pts[8]) / 2
-    pts += np.asarray(target, np.float32) - pinch_pt
+    anchor = pts[8] if point else (pts[4] + pts[8]) / 2
+    pts += np.asarray(target, np.float32) - anchor
     return Hand(label, pts, 1.0)
 
 
@@ -58,23 +62,40 @@ def test_gestures():
     print("gestos: ok")
 
 
-def run(ctrl, hands, frames=1, t0=0.0, dt=1 / 30):
-    for i in range(frames):
-        ctrl.update(hands, t0 + i * dt, dt)
+_clock = [0.0]
+
+
+def run(ctrl, hands, frames=1, dt=1 / 30):
+    for _ in range(frames):
+        _clock[0] += dt
+        ctrl.update(hands, _clock[0], dt)
 
 
 def test_controller():
     W, H = 960, 540
     c = BoxController(W, H)
-    c.background_ready()
     assert c.state == State.DEFINING
 
-    # criar a janela: duas pinças segurando
-    two = [make_hand((250, 150), True, label="Left"), make_hand((550, 400), True)]
-    run(c, two, config.DEFINE_CONFIRM_FRAMES)
-    assert c.state == State.FREE and c.box is not None
-    assert abs(c.box.w - 300) < 1 and abs(c.box.h - 250) < 1
-    run(c, [], 2)                                   # soltou
+    # os dois indicadores apontam para os cantos: só mostra a prévia
+    a, b = (250, 150), (550, 400)
+    pointing = [make_hand(a, point=True, label="Left"), make_hand(b, point=True)]
+    run(c, pointing, 10)
+    assert c.state == State.DEFINING and c.preview is not None
+
+    # pinça SEGURADA (lenta) não salva
+    run(c, [make_hand(a, pinch=True, point=True, label="Left"), make_hand(b, point=True)], 30)
+    run(c, pointing, 10)
+    assert c.state == State.DEFINING and c.box is None, c.state
+
+    # pinça rápida salva; o dedo "anda" durante a pinça, mas valem os cantos de antes
+    moved = (a[0] + 25, a[1] + 30)
+    run(c, [make_hand(moved, pinch=True, point=True, label="Left"), make_hand(b, point=True)], 5)
+    assert c.tap_pending
+    run(c, pointing, 1)
+    assert c.state == State.FREE and c.box is not None, c.state
+    assert abs(c.box.w - 300) < 3 and abs(c.box.h - 250) < 3, (c.box.w, c.box.h)
+    print(f"definir com pinça rápida: ok, janela {c.box.w:.0f} x {c.box.h:.0f}")
+    run(c, [], 2)                                   # mãos saem
 
     # arrastar pelo meio e soltar rápido -> desliza
     run(c, [make_hand((400, 275))], 2)
@@ -142,29 +163,52 @@ def synthetic_scene(w=960, h=540):
 
 
 def add_person(scene, cx, t=0.0):
+    """Desenha uma pessoa (com textura de roupa) e devolve (frame, máscara 0/255)."""
     f = scene.copy()
-    cv2.circle(f, (cx, 170), 48, (80, 120, 190), -1)                      # cabeça
-    cv2.ellipse(f, (cx, 340), (85, 140), 0, 0, 360, (40, 40, 160), -1)    # corpo
-    cv2.ellipse(f, (cx - 110, 300), (25, 90), 20, 0, 360, (80, 120, 190), -1)   # braço
+    m = np.zeros(scene.shape[:2], np.uint8)
+    for img, color in ((f, None), (m, 255)):
+        cv2.circle(img, (cx, 170), 48, color or (80, 120, 190), -1)                      # cabeça
+        cv2.ellipse(img, (cx, 340), (85, 140), 0, 0, 360, color or (40, 40, 160), -1)    # corpo
+        cv2.ellipse(img, (cx - 110, 300), (25, 90), 20, 0, 360, color or (80, 120, 190), -1)  # braço
+    for y in range(230, 470, 24):                                         # listras da roupa
+        cv2.line(f, (cx - 70, y), (cx + 70, y + 10), (90, 90, 200), 4)
     noise = np.random.default_rng(int(t * 10)).normal(0, 2, f.shape)
-    return np.clip(f + noise, 0, 255).astype(np.uint8)
+    return np.clip(f + noise, 0, 255).astype(np.uint8), m
 
 
-def test_render(out_dir=Path("tests/output")):
-    out_dir.mkdir(parents=True, exist_ok=True)
-    scene = synthetic_scene()
+def test_segmenter(scene):
+    seg = PersonSegmenter()
+    prob = seg.probability(scene)
+    seg.close()
+    assert prob.shape == scene.shape[:2] and prob.dtype == np.float32
+    assert prob.mean() < 0.2, prob.mean()     # cenário sem ninguém: quase nada é pessoa
+    print(f"segmentador: ok (prob. média sem pessoas {prob.mean():.3f})")
+
+
+def test_background(scene):
+    """Aprende o fundo com uma pessoa andando na frente o tempo todo."""
     bgm = BackgroundModel()
-    rng = np.random.default_rng(0)
-    for _ in range(config.CALIBRATION_FRAMES):
-        bgm.add_calibration_frame(np.clip(scene + rng.normal(0, 2, scene.shape), 0, 255).astype(np.uint8))
-    assert bgm.ready
+    for i, cx in enumerate(range(250, 760, 15)):
+        frame, m = add_person(scene, cx, i)
+        bgm.update(frame, m)
+    assert bgm.known_fraction > 0.97, bgm.known_fraction
+    # onde a pessoa estava no começo, o fundo aprendido é o cenário, não a pessoa
+    region = (slice(220, 450), slice(180, 320))
+    err = np.abs(bgm.image()[region].astype(int) - scene[region].astype(int)).mean()
+    assert err < 6, err
 
-    frame = add_person(scene, 480)
-    mask = bgm.person_mask(frame)
-    coverage = (mask > 0).mean()
-    assert 0.05 < coverage < 0.4, coverage
-    # o céu sem ninguém não pode virar "pessoa"
-    assert mask[30:80, 30:200].mean() < 5
+    # pessoa parada desde o primeiro frame: a área nunca vista é preenchida (inpaint)
+    still = BackgroundModel()
+    frame, m = add_person(scene, 480)
+    still.update(frame, m)
+    assert still.known_fraction < 0.9 and still.image() is not None
+    print(f"fundo com pessoa na cena: ok ({bgm.known_fraction * 100:.0f}% aprendido, erro {err:.1f})")
+    return bgm
+
+
+def test_render(scene, bgm, out_dir=Path("tests/output")):
+    out_dir.mkdir(parents=True, exist_ok=True)
+    frame, mask = add_person(scene, 480)
 
     box = InvisibleBox(560, 300, 420, 300, angle=math.radians(-8))
     glass = GlassEffect()
@@ -184,7 +228,7 @@ def test_render(out_dir=Path("tests/output")):
     c.box, c.state = box, State.FREE
     view = out.copy()
     overlay.draw_box(view, c, 1.0)
-    overlay.draw_hud(view, c, 30.0)
+    overlay.draw_hud(view, c, 30.0, bgm.known_fraction)
     overlay.debug_panel(view, bgm.image(), mask)
     grid = np.vstack([np.hstack([frame, view])])
     cv2.imwrite(str(out_dir / "render.png"), grid)
@@ -201,5 +245,8 @@ def test_render(out_dir=Path("tests/output")):
 if __name__ == "__main__":
     test_gestures()
     test_controller()
-    test_render()
+    cena = synthetic_scene()
+    test_segmenter(cena)
+    fundo = test_background(cena)
+    test_render(cena, fundo)
     print("TODOS OS TESTES PASSARAM")

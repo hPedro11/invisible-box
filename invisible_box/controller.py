@@ -1,5 +1,6 @@
 """Máquina de estados que transforma gestos em ações sobre a janela."""
 import math
+from collections import deque
 from dataclasses import dataclass
 from enum import Enum
 
@@ -10,7 +11,6 @@ from .box import InvisibleBox
 
 
 class State(Enum):
-    CALIBRATING = "CALIBRANDO"
     DEFINING = "DEFININDO"
     FREE = "LIVRE"
     DRAGGING = "ARRASTANDO"
@@ -20,8 +20,7 @@ class State(Enum):
 
 
 HINTS = {
-    State.CALIBRATING: "Saia da frente da camera: aprendendo o fundo...",
-    State.DEFINING: "Faca pinca com as DUAS maos nos cantos da janela e segure",
+    State.DEFINING: "Aponte os DOIS indicadores nos cantos e faca uma pinca rapida para salvar",
     State.FREE: "Pinca dentro = mover | canto = redimensionar | 2 maos = girar | 2 maos abertas = recriar",
     State.DRAGGING: "Solte rapido para arremessar",
     State.RESIZING: "Solte para fixar o tamanho",
@@ -36,34 +35,33 @@ class HandInfo:
     points: np.ndarray
     pinch: gestures.PinchEvent
     point: np.ndarray       # ponto da pinça suavizado
+    tip: np.ndarray         # ponta do indicador suavizada
     open_palm: bool
 
 
 class BoxController:
     def __init__(self, width, height):
         self.width, self.height = width, height
-        self.state = State.CALIBRATING
+        self.state = State.DEFINING
         self.box = None
         self.preview = None          # (p1, p2) enquanto define a janela
         self.hands = []
         self._pinch = gestures.PinchDetector()
         self._smooth = {}
-        self._define_frames = 0
+        self._last_pointing = {}     # chave da mão -> último instante com o indicador esticado
+        self._corners = deque()      # (t, ponta A, ponta B) dos últimos instantes
+        self._tap = None             # pinça rápida em andamento enquanto define a janela
+        self._t = 0.0
         self._reset_frames = 0
         self._wait_release = False
         self._grab = {}
 
     # --- API ---------------------------------------------------------------
-    def background_ready(self):
-        if self.state == State.CALIBRATING:
-            self.state = State.FREE if self.box else State.DEFINING
-
-    def recalibrate(self):
-        self.state = State.CALIBRATING
-
     def new_box(self):
         self.box = None
         self._grab = {}
+        self._tap = None
+        self._corners.clear()
         self.state = State.DEFINING
 
     @property
@@ -71,11 +69,11 @@ class BoxController:
         return HINTS[self.state]
 
     def update(self, hands, t, dt):
-        self.hands = self._read_hands(hands)
+        self._t = t
+        self.hands = self._read_hands(hands, t)
         if self.box is not None:
             self.box.wobble *= 0.9
         handler = {
-            State.CALIBRATING: lambda dt: None,
             State.DEFINING: self._defining,
             State.FREE: self._free,
             State.DRAGGING: self._dragging,
@@ -86,22 +84,36 @@ class BoxController:
         handler(dt)
 
     # --- leitura das mãos ---------------------------------------------------
-    def _read_hands(self, hands):
+    def _read_hands(self, hands, t):
         infos, seen = [], set()
         for i, h in enumerate(hands):
             key = h.label if h.label not in seen else f"{h.label}{i}"
             seen.add(key)
             pts = h.points
-            ev = self._pinch.update(key, gestures.pinch_ratio(pts), gestures.pinch_allowed(pts))
-            raw = gestures.pinch_point(pts)
-            prev = self._smooth.get(key)
-            a = config.POINT_SMOOTHING
-            p = raw if prev is None else prev * a + raw * (1 - a)
-            self._smooth[key] = p
-            infos.append(HandInfo(key, pts, ev, p, gestures.is_open_palm(pts)))
+            if gestures.finger_extended(pts, "index"):
+                self._last_pointing[key] = t
+            # pinça a partir do "apontar" (outros dedos dobrados) também vale:
+            # o indicador estava esticado há pouco, então não é um punho.
+            pointed = t - self._last_pointing.get(key, -math.inf) <= config.POINTING_PINCH_WINDOW
+            allowed = gestures.pinch_allowed(pts) or pointed
+            ev = self._pinch.update(key, gestures.pinch_ratio(pts), allowed)
+            p = self._smoothed(key, gestures.pinch_point(pts))
+            tip = self._smoothed(key + "/tip", pts[gestures.INDEX_TIP])
+            infos.append(HandInfo(key, pts, ev, p, tip, gestures.is_open_palm(pts)))
         self._pinch.forget_missing(seen)  # mão que sumiu conta como pinça solta
-        self._smooth = {k: v for k, v in self._smooth.items() if k in seen}
+        alive = seen | {k + "/tip" for k in seen}
+        self._smooth = {k: v for k, v in self._smooth.items() if k in alive}
+        self._last_pointing = {k: v for k, v in self._last_pointing.items() if k in seen}
         return infos
+
+    def _smoothed(self, key, raw):
+        """Média móvel exponencial da posição, para o ponto não tremer."""
+        raw = np.asarray(raw, np.float32)
+        prev = self._smooth.get(key)
+        a = config.POINT_SMOOTHING
+        p = raw if prev is None else prev * a + raw * (1 - a)
+        self._smooth[key] = p
+        return p
 
     def _hand(self, key):
         return next((h for h in self.hands if h.key == key), None)
@@ -111,24 +123,52 @@ class BoxController:
 
     # --- estados ------------------------------------------------------------
     def _defining(self, dt):
+        """Os dois indicadores marcam cantos opostos; uma pinça rápida salva a janela."""
+        t = self._t
         if len(self.hands) < 2:
-            self.preview, self._define_frames = None, 0
+            self.preview, self._tap = None, None
+            self._corners.clear()
             return
         a, b = self.hands[0], self.hands[1]
-        self.preview = (a.point.copy(), b.point.copy())
-        if a.pinch.pinching and b.pinch.pinching:
-            self._define_frames += 1
-        else:
-            self._define_frames = 0
-        if self._define_frames >= config.DEFINE_CONFIRM_FRAMES:       # confirmação (Lab12)
-            self.box = InvisibleBox.from_corners(a.point, b.point)
-            self.preview, self._define_frames = None, 0
-            self._wait_release = True   # só aceita novos gestos depois de soltar
-            self.state = State.FREE
+        self._corners.append((t, a.tip.copy(), b.tip.copy()))
+        while self._corners and t - self._corners[0][0] > 1.0:
+            self._corners.popleft()
+
+        if self._tap is None:
+            started = next((h for h in (a, b) if h.pinch.started), None)
+            if started is not None:
+                # durante a pinça o indicador desce até o polegar e o canto "anda";
+                # por isso guardamos os cantos de um instante ANTES da pinça.
+                self._tap = {"key": started.key, "t0": t, "corners": self._corners_before(t)}
+
+        if self._tap is not None:
+            h = self._hand(self._tap["key"])
+            if h is None or t - self._tap["t0"] > config.TAP_MAX_SECONDS:
+                self._tap = None                      # segurou demais: não é pinça rápida
+            elif h.pinch.released:                    # fechou e abriu rápido -> salva (Lab12)
+                p1, p2 = self._tap["corners"]
+                self.box = InvisibleBox.from_corners(p1, p2)
+                self.preview, self._tap = None, None
+                self._corners.clear()
+                self._wait_release = True             # só aceita novos gestos depois de soltar
+                self.state = State.FREE
+                return
+
+        self.preview = self._tap["corners"] if self._tap else (a.tip.copy(), b.tip.copy())
+
+    def _corners_before(self, t):
+        """Cantos de TAP_LOOKBACK segundos atrás (ou os mais antigos que houver)."""
+        target = t - config.TAP_LOOKBACK
+        chosen = self._corners[0]
+        for item in self._corners:
+            if item[0] > target:
+                break
+            chosen = item
+        return chosen[1].copy(), chosen[2].copy()
 
     @property
-    def define_progress(self):
-        return self._define_frames / config.DEFINE_CONFIRM_FRAMES
+    def tap_pending(self):
+        return self._tap is not None
 
     def _check_reset(self):
         both_open = len(self.hands) >= 2 and all(h.open_palm for h in self.hands[:2])

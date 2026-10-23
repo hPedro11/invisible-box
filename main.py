@@ -17,6 +17,7 @@ from invisible_box.background import BackgroundModel
 from invisible_box.controller import BoxController
 from invisible_box.glass import GlassEffect
 from invisible_box.hand_tracker import HandTracker
+from invisible_box.person_segmenter import PersonSegmenter
 
 WINDOW = "Invisible Box"
 
@@ -33,8 +34,9 @@ def parse_args():
 
 def main():
     args = parse_args()
-    if not Path(config.MODEL_PATH).exists():
-        sys.exit(f"Modelo não encontrado em {config.MODEL_PATH}. Rode: python download_models.py")
+    for path in (config.MODEL_PATH, config.SEGMENTER_PATH):
+        if not Path(path).exists():
+            sys.exit(f"Modelo não encontrado em {path}. Rode: python download_models.py")
 
     cap = cv2.VideoCapture(args.camera)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, args.width)
@@ -43,6 +45,7 @@ def main():
         sys.exit(f"Não foi possível abrir a câmera {args.camera}.")
 
     tracker = HandTracker()
+    segmenter = PersonSegmenter()
     background = BackgroundModel()
     glass = GlassEffect()
     controller = BoxController(args.width, args.height)
@@ -68,27 +71,17 @@ def main():
             last = now
             fps = fps * 0.9 + (1.0 / max(dt, 1e-3)) * 0.1
 
-            # 1) Calibração do fundo
-            if not background.ready:
-                background.add_calibration_frame(frame)
-                view = frame.copy()
-                overlay.draw_calibration(view, background.progress)
-                if background.ready:
-                    controller.background_ready()
-                cv2.imshow(WINDOW, view)
-                if (cv2.waitKey(1) & 0xFF) in (27, ord("q")):
-                    break
-                continue
-
-            # 2) Visão: mãos no frame ORIGINAL e máscara da pessoa
+            # 1) Visão: mãos e pessoas no frame ORIGINAL
             hands = tracker.detect(frame)
-            person = background.person_mask(frame)
+            person = background.person_mask(segmenter.probability(frame))
+
+            # 2) Fundo: aprende tudo que não é pessoa (funciona com gente na cena)
+            background.update(frame, person)
 
             # 3) Gestos -> estado da janela
             controller.update(hands, now, dt)
 
             # 4) Efeito
-            view = frame
             if controller.box is not None:
                 box_mask = controller.box.mask(frame.shape, now)
                 view = glass.render(frame, background.image(), person, box_mask,
@@ -96,15 +89,13 @@ def main():
             else:
                 view = frame.copy()
 
-            background.update(frame, person)
-
             # 5) Interface
             overlay.draw_box(view, controller, now)
             overlay.draw_preview(view, controller)
             overlay.draw_hands(view, controller, show_hands)
             if show_debug:
                 overlay.debug_panel(view, background.image(), person)
-            overlay.draw_hud(view, controller, fps)
+            overlay.draw_hud(view, controller, fps, background.known_fraction)
             cv2.imshow(WINDOW, view)
 
             key = cv2.waitKey(1) & 0xFF
@@ -112,7 +103,6 @@ def main():
                 break
             if key == ord("r"):
                 background.reset()
-                controller.recalibrate()
             elif key == ord("n"):
                 controller.new_box()
             elif key == ord("d"):
@@ -124,6 +114,7 @@ def main():
                 cv2.imwrite(f"capturas/invisible_box_{int(time.time())}.png", view)
     finally:
         tracker.close()
+        segmenter.close()
         cap.release()
         cv2.destroyAllWindows()
 
