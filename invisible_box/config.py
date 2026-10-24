@@ -26,8 +26,9 @@ SEGMENTER_URL = (
     "https://storage.googleapis.com/mediapipe-models/image_segmenter/"
     "selfie_segmenter/float16/latest/selfie_segmenter.tflite"
 )
-SEG_THRESHOLD = 0.5        # probabilidade para o pixel PASSAR a ser "pessoa" (Lab02)
-SEG_KEEP_THRESHOLD = 0.25  # ...e para CONTINUAR sendo (histerese: a borda não oscila)
+SEG_THRESHOLD = 0.4        # probabilidade para o pixel PASSAR a ser "pessoa" (Lab02)
+SEG_KEEP_THRESHOLD = 0.2   # ...e para CONTINUAR sendo (histerese: a borda não oscila)
+SEG_LEARN_THRESHOLD = 0.15  # o fundo só aprende onde a chance de ser pessoa é MENOR que isso
 SEG_SMOOTHING = 0.5        # média móvel da probabilidade entre frames (0 = sem suavizar)
 
 # --- Gestos ---------------------------------------------------------------
@@ -47,7 +48,9 @@ BG_LEARNING_RATE = 0.05    # quão rápido o fundo se adapta onde não há pesso
 BG_UPDATE_EVERY = 2        # aprende o fundo a cada N frames (ele muda devagar)
 BG_EXPOSURE_COMPENSATION = True  # acompanha o ajuste automático de exposição da webcam
 BG_GAIN_SMOOTHING = 0.7    # média móvel do ganho de exposição (0 = sem suavizar)
-BG_CONFIRM_FRAMES = 6      # frames seguidos sem pessoa até o pixel entrar no fundo
+BG_CONFIRM_FRAMES = 15     # frames seguidos sem pessoa e parado até o pixel entrar no fundo
+BG_MOTION_THRESHOLD = 10   # diferença entre frames (0-255) acima disso = "se mexeu" (Lab07)
+BG_REPLACE_DIFF = 35       # fundo visível e parado tão diferente do guardado -> troca na hora
 BG_MISSING_WARN = 0.03     # avisa se mais que 3% da janela ainda não tem fundo conhecido
 BG_INPAINT_EVERY = 10      # frames entre os preenchimentos das áreas nunca vistas
 BG_INPAINT_WIDTH = 480     # largura do inpaint (maior = chute mais nítido; roda em paralelo)

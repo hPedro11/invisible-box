@@ -195,6 +195,9 @@ def test_background(scene):
     for i, cx in enumerate(range(250, 760, 15)):
         frame, m = add_person(scene, cx, i)
         bgm.update(frame, m)
+    # o rastro que ela acabou de deixar só entra no fundo depois de ~1 s parado
+    for _ in range(config.BG_CONFIRM_FRAMES + 4):
+        bgm.update(frame, m)
     assert bgm.known_fraction > 0.97, bgm.known_fraction
     # onde a pessoa estava no começo, o fundo aprendido é o cenário, não a pessoa
     region = (slice(220, 450), slice(180, 320))
@@ -213,6 +216,40 @@ def test_background(scene):
         flicker.update(frame, m if i != 5 else np.zeros_like(m))
     body = m > 0
     assert flicker.unknown_mask()[body].mean() > 250, "a pessoa entrou no fundo"
+    # o segmentador perde a cabeça o tempo todo (luz ruim): ela NÃO pode entrar no fundo.
+    # (a) sem probabilidade, pessoa se mexendo um pouco -> o movimento barra.
+    #     A cabeça sintética é um disco liso (pior caso: o miolo não "se mexe"),
+    #     então exigimos só que a maior parte fique fora; sem o detector, entra 100%.
+    # (b) pessoa parada, com probabilidade baixa mas não zero -> a dúvida barra tudo.
+    head = np.zeros(scene.shape[:2], np.uint8)
+    cv2.circle(head, (480, 150), 60, 255, -1)
+    erase = cv2.dilate(head, np.ones((15, 15), np.uint8))
+    top = head.copy()
+    top[150:] = 0                                        # metade de cima, longe do corpo
+    for case, limit in (("movimento", 0.5), ("duvida", 0.02)):
+        ghost = BackgroundModel()
+        for i in range(60):
+            moving = case == "movimento"
+            frame, m = add_person(scene, 480 + (i % 3 - 1) * 3 if moving else 480, i if moving else 0)
+            missed = cv2.bitwise_and(m, cv2.bitwise_not(erase))
+            prob = None
+            if case == "duvida":
+                prob = cv2.resize((m > 0).astype(np.float32) * 0.9, (640, 360))
+                prob[cv2.resize(erase, (640, 360)) > 0] = 0.3
+            ghost.update(frame, missed, prob)
+        learned = ((ghost.unknown_mask() == 0) & (top > 0)).sum() / (top > 0).sum()
+        assert learned < limit, (case, learned)
+
+    # rosto que entrou no fundo por engano some assim que a área fica visível
+    heal = BackgroundModel()
+    frame, m = add_person(scene, 480)
+    for _ in range(30):                                  # segmentador "cego": tudo vira fundo
+        heal.update(frame, np.zeros_like(m))
+    for _ in range(30):                                  # a pessoa sai
+        heal.update(scene, np.zeros_like(m))
+    err_heal = np.abs(heal.image()[m > 0].astype(int) - scene[m > 0].astype(int)).mean()
+    assert err_heal < 6, err_heal
+
     # a webcam muda a exposição sozinha: o fundo atrás da pessoa foi aprendido
     # mais escuro (pessoa fora do quadro) e precisa acompanhar quando ela volta
     expo = BackgroundModel()
@@ -226,7 +263,7 @@ def test_background(scene):
     err_expo = np.abs(expo.image()[body].astype(int) - scene[body].astype(int)).mean()
     assert err_expo < 6, err_expo
     print(f"fundo com pessoa na cena: ok ({bgm.known_fraction * 100:.0f}% aprendido, erro {err:.1f}, "
-          f"erro com exposição mudando {err_expo:.1f})")
+          f"erro com exposição mudando {err_expo:.1f}, fantasma corrigido {err_heal:.1f})")
     return bgm
 
 

@@ -67,7 +67,7 @@ class Pipeline:
         self.person = person = self.background.person_mask(prob, frame.shape)
 
         # 2) Fundo: aprende tudo que não é pessoa (funciona com gente na cena)
-        background = self.background.update(frame, person)
+        background = self.background.update(frame, person, prob)
 
         # 3) Gestos -> estado da janela
         controller = self.controller

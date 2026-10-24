@@ -11,6 +11,13 @@ só sobra parede branca). O fundo é guardado numa exposição de REFERÊNCIA; a
 cada atualização medimos o ganho atual da câmera na parte visível do fundo e
 aplicamos esse ganho ao fundo inteiro. Sem isso, o pedaço atrás da pessoa
 ficava "congelado" na exposição antiga e aparecia como uma mancha cinza.
+
+Proteção contra "fantasmas": se o segmentador falha (luz ruim, pele parecida
+com a parede), um pedaço da pessoa podia entrar no fundo e ficar lá. Por isso
+o fundo só aprende pixels (1) com chance baixíssima de ser pessoa, (2) PARADOS
+(diferença entre frames, Lab07: gente sempre se mexe um pouco, parede não) e
+(3) assim por BG_CONFIRM_FRAMES seguidos. E um pedaço visível e parado muito
+diferente do guardado é trocado na hora: o fantasma some assim que aparece.
 """
 from concurrent.futures import ThreadPoolExecutor
 
@@ -45,6 +52,7 @@ class BackgroundModel:
         self._frames = 0
         self._person_prev = None  # máscara anterior (para a histerese)
         self._gain = np.ones(3, np.float32)  # exposição atual / exposição de referência (B, G, R)
+        self._prev_gray = None    # frame anterior reduzido (para detectar movimento)
 
     @property
     def ready(self):
@@ -98,8 +106,12 @@ class BackgroundModel:
             _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
         return mask
 
-    def update(self, frame, person_mask):
-        """Aprende o fundo só onde não há pessoa (com margem em volta delas)."""
+    def update(self, frame, person_mask, prob=None):
+        """Aprende o fundo só onde não há pessoa (com margem em volta delas).
+
+        `prob` (probabilidade do segmentador, reduzida) deixa o aprendizado mais
+        exigente: pixels com qualquer dúvida não entram no fundo.
+        """
         if self._bg is None:
             self._bg = frame.astype(np.float32)
             self._known = np.zeros(frame.shape[:2], np.uint8)
@@ -108,11 +120,39 @@ class BackgroundModel:
 
         # o fundo muda devagar: aprender a cada BG_UPDATE_EVERY frames basta
         if self._image is None or self._frames % config.BG_UPDATE_EVERY == 0:
-            self._learn(frame, person_mask)
+            self._learn(frame, person_mask, prob)
         return self._image
 
-    def _learn(self, frame, person_mask):
-        free = cv2.bitwise_not(cv2.dilate(person_mask, self._margin_k))   # Lab05/Lab06
+    @staticmethod
+    def _to_frame_size(mask, shape):
+        h, w = shape[:2]
+        if mask.shape[:2] == (h, w):
+            return mask
+        return cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST)
+
+    def _not_learnable(self, frame, person_mask, prob):
+        """Onde o fundo NÃO pode aprender. Devolve (pessoa ou dúvida, + movimento)."""
+        people = person_mask
+        if prob is not None:
+            doubt = cv2.compare(prob, float(config.SEG_LEARN_THRESHOLD), cv2.CMP_GT)
+            people = cv2.bitwise_or(people, self._to_frame_size(doubt, frame.shape))
+        blocked = people
+
+        # movimento: diferença entre frames em 1/4 da resolução (Lab07)
+        h, w = frame.shape[:2]
+        small = cv2.resize(frame, (max(w // 4, 1), max(h // 4, 1)), interpolation=cv2.INTER_AREA)
+        gray = cv2.GaussianBlur(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), (3, 3), 0)
+        if self._prev_gray is not None and self._prev_gray.shape == gray.shape:
+            moving = cv2.compare(cv2.absdiff(gray, self._prev_gray),
+                                 float(config.BG_MOTION_THRESHOLD), cv2.CMP_GT)
+            moving = cv2.dilate(moving, _ellipse(3))
+            blocked = cv2.bitwise_or(blocked, self._to_frame_size(moving, frame.shape))
+        self._prev_gray = gray
+        return people, blocked
+
+    def _learn(self, frame, person_mask, prob=None):
+        people, blocked = self._not_learnable(frame, person_mask, prob)
+        free = cv2.bitwise_not(cv2.dilate(blocked, self._margin_k))   # Lab05/Lab06
 
         # só confia no pixel depois de alguns frames seguidos sem pessoa: se o
         # segmentador falhar em um frame, um pedaço da pessoa não vira "fundo".
@@ -124,7 +164,11 @@ class BackgroundModel:
         # ganho de exposição medido no fundo visível que já conhecíamos;
         # o frame entra no fundo convertido para a exposição de referência
         if config.BG_EXPOSURE_COMPENSATION:
-            self._update_gain(frame, cv2.bitwise_and(stable, self._known))
+            # mede em todo fundo conhecido que não é pessoa, MESMO "se mexendo":
+            # uma mudança de exposição faz a imagem inteira mudar de uma vez, e é
+            # justamente nessa hora que o ganho precisa acompanhar
+            visible = cv2.bitwise_not(cv2.dilate(people, self._margin_k))
+            self._update_gain(frame, cv2.bitwise_and(visible, self._known))
             g = self._gain
             target = cv2.multiply(frame.astype(np.float32),
                                   (float(1.0 / g[0]), float(1.0 / g[1]), float(1.0 / g[2]), 0.0))
@@ -134,6 +178,11 @@ class BackgroundModel:
         # pixel confirmado pela primeira vez: copia direto (taxa 1.0); os outros:
         # média que acompanha a luz (Lab07)
         new = cv2.bitwise_and(stable, cv2.bitwise_not(self._known))
+        # já conhecido, visível, parado e MUITO diferente do guardado: o guardado
+        # estava errado (ex.: pedaço de pessoa que entrou por engano) -> troca na hora
+        if config.BG_REPLACE_DIFF > 0 and cv2.countNonZero(self._known):
+            new = cv2.bitwise_or(new, cv2.bitwise_and(
+                cv2.bitwise_and(stable, self._known), self._changed(target, frame.shape)))
         cv2.accumulateWeighted(target, self._bg, 1.0, mask=new)
         cv2.accumulateWeighted(target, self._bg, config.BG_LEARNING_RATE, mask=stable)
         cv2.bitwise_or(self._known, stable, dst=self._known)
@@ -173,6 +222,17 @@ class BackgroundModel:
         if self._executor is not None:
             self._executor.shutdown(wait=False, cancel_futures=True)
             self._executor = None
+
+    def _changed(self, target, shape):
+        """255 onde o frame (já na exposição de referência) difere muito do fundo guardado."""
+        h, w = shape[:2]
+        sw, sh = max(w // 4, 1), max(h // 4, 1)
+        t = cv2.resize(np.asarray(target, np.float32), (sw, sh), interpolation=cv2.INTER_AREA)
+        b = cv2.resize(self._bg, (sw, sh), interpolation=cv2.INTER_AREA)
+        diff = cv2.absdiff(t, b).max(axis=2)
+        changed = cv2.compare(diff, float(config.BG_REPLACE_DIFF), cv2.CMP_GT)
+        changed = cv2.erode(changed, _ellipse(3))    # ignora pontinhos isolados de ruído
+        return self._to_frame_size(changed, shape)
 
     def _update_gain(self, frame, visible):
         """Mede quanto a câmera clareou/escureceu: frame / fundo na parte visível.
