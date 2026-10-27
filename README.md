@@ -92,9 +92,11 @@ stateDiagram-v2
 
 ## Como executar
 
-Requisitos: Python 3.10+ e uma webcam. **A câmera precisa ficar parada** (apoiada ou em tripé), porque o efeito usa o fundo aprendido daquele ponto de vista.
+Requisitos: Python 3.10 ou mais novo (testado no 3.10 e no 3.14), Git e uma webcam. **A câmera precisa ficar parada** (apoiada ou em tripé), porque o efeito usa o fundo aprendido daquele ponto de vista.
 
 ```bash
+git clone https://github.com/hPedro11/invisible-box.git
+cd invisible-box
 python -m venv .venv
 # Windows: .venv\Scripts\activate | Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
