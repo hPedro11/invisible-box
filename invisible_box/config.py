@@ -17,6 +17,7 @@ NUM_HANDS = 2
 MIN_DETECTION_CONFIDENCE = 0.6
 MIN_PRESENCE_CONFIDENCE = 0.6
 MIN_TRACKING_CONFIDENCE = 0.5
+HAND_IDLE_EVERY = 2        # sem mãos na tela, procura mãos a cada N frames (é a parte mais cara)
 
 # --- MediaPipe: segmentação de pessoas ------------------------------------
 # selfie_segmenter: ~6 ms por frame, bordas um pouco serrilhadas (padrão).

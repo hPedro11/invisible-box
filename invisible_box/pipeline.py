@@ -5,6 +5,7 @@ gestos -> efeito de vidro -> interface.
 """
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import cv2
 
@@ -50,6 +51,11 @@ class Pipeline:
         self.now = time.perf_counter()
         self.fps = 0.0
         self._last = self.now
+        # a segmentação roda numa thread em paralelo com as mãos (o MediaPipe
+        # libera o Python enquanto calcula, então as duas andam juntas)
+        self._vision = ThreadPoolExecutor(max_workers=1, thread_name_prefix="segmentacao")
+        self._frame_i = 0
+        self._saw_hands = False
 
     def step(self, frame):
         """Processa um frame da câmera e devolve a imagem pronta para mostrar."""
@@ -61,9 +67,17 @@ class Pipeline:
         self._last, self.now = now, now
         self.fps = self.fps * 0.9 + (1.0 / max(dt, 1e-3)) * 0.1
 
-        # 1) Visão: mãos e pessoas (o MediaPipe recebe uma cópia reduzida)
-        hands = self.tracker.detect(frame)
-        prob = self.segmenter.probability(frame)
+        # 1) Visão: mãos e pessoas ao mesmo tempo (o MediaPipe recebe cópias reduzidas).
+        # Sem mãos na tela, procurar mãos é o mais caro (o modelo varre a imagem
+        # toda), então nesse caso procura só a cada HAND_IDLE_EVERY frames.
+        seg = self._vision.submit(self.segmenter.probability, frame)
+        self._frame_i += 1
+        if self._saw_hands or self._frame_i % max(config.HAND_IDLE_EVERY, 1) == 0:
+            hands = self.tracker.detect(frame)
+            self._saw_hands = bool(hands)
+        else:
+            hands = []
+        prob = seg.result()
         self.person = person = self.background.person_mask(prob, frame.shape)
 
         # 2) Fundo: aprende tudo que não é pessoa (funciona com gente na cena)
@@ -108,6 +122,7 @@ class Pipeline:
         return True
 
     def close(self):
+        self._vision.shutdown(wait=True)
         self.tracker.close()
         self.segmenter.close()
         self.background.close()
