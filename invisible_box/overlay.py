@@ -75,7 +75,7 @@ def draw_missing_notice(frame, box, missing):
     tw = max(sz[0] for sz in sizes) + 20
     th = sum(sz[1] for sz in sizes) + 30
     x0 = int(min(max(x + (bw - tw) // 2, 0), max(w - tw, 0)))
-    y0 = int(min(max(y + 12, 40), max(h - th - 40, 40)))
+    y0 = int(min(max(y + 12, 60), max(h - th - 40, 60)))
     region = frame[y0:y0 + th, x0:x0 + tw]
     frame[y0:y0 + th, x0:x0 + tw] = cv2.addWeighted(region, 0.35, np.zeros_like(region), 0.65, 0.0)
     ty = y0 + 8
@@ -116,19 +116,46 @@ def draw_hands(frame, controller, show_skeleton):
                     FONT, 0.6, ORANGE, 2, cv2.LINE_AA)
 
 
+KEYS_TEXT = "[N] nova  [R] reaprender fundo  [D] debug  [H] maos  [S] captura  [Q] sair"
+
+
+def _fit_scale(text, scale, max_width, min_scale=0.3):
+    """Diminui a fonte até o texto caber em max_width px."""
+    while scale > min_scale and cv2.getTextSize(text, FONT, scale, 1)[0][0] > max_width:
+        scale -= 0.02
+    return scale
+
+
 def draw_hud(frame, controller, fps, known=None):
-    """Barra de cima: estado, quanto do fundo já foi visto e FPS. Barra de baixo: dica."""
+    """Barra de cima: estado, quanto do fundo já foi visto e FPS. Barra de baixo: dica.
+
+    Em câmeras pequenas (ex.: 640x480) as teclas não cabem na barra de cima e
+    vão para uma segunda linha logo abaixo dela.
+    """
     h, w = frame.shape[:2]
     cv2.rectangle(frame, (0, 0), (w, 34), (0, 0, 0), -1)
     cv2.putText(frame, f"{controller.state.value}", (10, 23), FONT, 0.6, CYAN, 2, cv2.LINE_AA)
+    left_end = 10 + cv2.getTextSize(controller.state.value, FONT, 0.6, 2)[0][0]
     if known is not None:
-        cv2.putText(frame, f"fundo {known * 100:3.0f}%", (215, 23), FONT, 0.5,
+        fundo_x = max(215, left_end + 15)
+        cv2.putText(frame, f"fundo {known * 100:3.0f}%", (fundo_x, 23), FONT, 0.5,
                     GREEN if known > 0.97 else ORANGE, 1, cv2.LINE_AA)
-    cv2.putText(frame, f"{fps:4.0f} FPS", (w - 95, 23), FONT, 0.55, WHITE, 1, cv2.LINE_AA)
+        left_end = fundo_x + cv2.getTextSize("fundo 100%", FONT, 0.5, 1)[0][0]
+    fps_x = w - 95
+    cv2.putText(frame, f"{fps:4.0f} FPS", (fps_x, 23), FONT, 0.55, WHITE, 1, cv2.LINE_AA)
+
+    keys_w = cv2.getTextSize(KEYS_TEXT, FONT, 0.42, 1)[0][0]
+    keys_x = fps_x - 20 - keys_w
+    if keys_x >= left_end + 20:      # cabe entre o "fundo" e o FPS
+        cv2.putText(frame, KEYS_TEXT, (keys_x, 23), FONT, 0.42, (180, 180, 180), 1, cv2.LINE_AA)
+    else:                             # segunda linha, abaixo da barra
+        scale = _fit_scale(KEYS_TEXT, 0.42, w - 20)
+        cv2.rectangle(frame, (0, 34), (w, 56), (0, 0, 0), -1)
+        cv2.putText(frame, KEYS_TEXT, (10, 50), FONT, scale, (180, 180, 180), 1, cv2.LINE_AA)
+
     cv2.rectangle(frame, (0, h - 30), (w, h), (0, 0, 0), -1)
-    cv2.putText(frame, controller.hint, (10, h - 10), FONT, 0.48, WHITE, 1, cv2.LINE_AA)
-    cv2.putText(frame, "[N] nova  [R] reaprender fundo  [D] debug  [H] maos  [Q] sair",
-                (w - 470, 23), FONT, 0.42, (180, 180, 180), 1, cv2.LINE_AA)
+    scale = _fit_scale(controller.hint, 0.48, w - 20)
+    cv2.putText(frame, controller.hint, (10, h - 10), FONT, scale, WHITE, 1, cv2.LINE_AA)
 
 
 def debug_panel(frame, background, person_mask, unknown=None):
@@ -144,7 +171,7 @@ def debug_panel(frame, background, person_mask, unknown=None):
         miss = cv2.resize(unknown, (tw, th), interpolation=cv2.INTER_NEAREST) > 0
         bg_small[miss] = (bg_small[miss] * 0.4 + np.array([255, 0, 255]) * 0.6).astype(np.uint8)
     mask_small = cv2.cvtColor(cv2.resize(person_mask, (tw, th)), cv2.COLOR_GRAY2BGR)
-    y = 40
+    y = 60   # abaixo da barra de cima (e da 2ª linha de teclas em câmeras pequenas)
     frame[y:y + th, w - tw - 10:w - 10] = bg_small
     frame[y + th + 6:y + 2 * th + 6, w - tw - 10:w - 10] = mask_small
     for label, ly in (("fundo aprendido", y), ("pessoas", y + th + 6)):

@@ -32,8 +32,8 @@ A janela não é estática: ela pode ser **arrastada, redimensionada, girada e a
 | Máscaras, operações bitwise, canais de cor e contornos (`findContours`) | Lab05 |
 | Morfologia (abertura, fechamento e dilatação) | Lab06 |
 | Modelo de fundo acumulado (`accumulateWeighted`) | Lab07 |
-| Interação e seleção de região (ROI) | Lab11 |
-| Gesto confirmado no tempo (pinça rápida) | Lab12 |
+| Seleção de região (ROI) por interação do usuário: no Lab11 com eventos do mouse, aqui com os dedos | Lab11 |
+| Razão de distâncias entre landmarks com limiar, confirmada no tempo (como o detector de fadiga do Lab12, aplicada à pinça) | Lab12 |
 | Landmarks das mãos (HandLandmarker) e segmentação de pessoas (ImageSegmenter) | Lab13 |
 
 ### Tecnologias
@@ -61,7 +61,8 @@ flowchart TD
 
     E --> K[Limiarização + morfologia]
     K --> L[Máscara das pessoas]
-    L --> J[Fundo aprendido fora das pessoas<br/>accumulateWeighted + inpaint]
+    C --> J
+    L --> J[Fundo aprendido fora das pessoas e parado<br/>accumulateWeighted + inpaint]
 
     I --> M[Interseção das máscaras - bitwise_and]
     L --> M
@@ -82,13 +83,17 @@ stateDiagram-v2
     Livre --> Redimensionando: pinça em um canto
     Livre --> Girando: pinça com as duas mãos
     Arrastando --> Girando: segunda mão faz pinça
-    Arrastando --> Inercia: soltou a pinça
+    Arrastando --> Inercia: soltou a pinça em movimento
+    Arrastando --> Livre: soltou a pinça devagar
     Redimensionando --> Livre: soltou a pinça
-    Girando --> Livre: soltou as pinças
+    Girando --> Arrastando: uma das mãos soltou
+    Girando --> Livre: soltou as duas pinças
     Inercia --> Livre: velocidade zerou
     Inercia --> Arrastando: pinça na janela
-    Livre --> Definindo: duas mãos abertas
+    Livre --> Definindo: duas mãos abertas por ~1 s
 ```
+
+A tecla `N` volta para *Definindo* a partir de qualquer estado; o gesto das duas mãos abertas só vale com a janela parada (*Livre*).
 
 ## Como executar
 
@@ -113,7 +118,7 @@ O programa pede 1280x720 à câmera e usa a resolução que ela entregar, sem es
 3. **Mover:** pinça dentro da janela e arraste. Solte com a mão em movimento para arremessar.
 4. **Redimensionar:** pinça em um dos cantos.
 5. **Girar e escalar:** pinça com as duas mãos dentro da janela e gire/afaste as mãos.
-6. **Recriar:** mostre as duas mãos abertas por ~1 segundo.
+6. **Recriar:** com a janela parada, mostre as duas mãos abertas por ~1 segundo (ou tecle `N`).
 
 | Tecla | Ação |
 |---|---|
@@ -143,7 +148,7 @@ Simula mãos (landmarks sintéticos) e uma cena com uma pessoa andando para test
 ```
 invisible-box/
 ├── main.py                  # abre a câmera e a janela; teclas
-├── download_models.py       # baixa o modelo do MediaPipe
+├── download_models.py       # baixa os modelos do MediaPipe
 ├── requirements.txt
 ├── invisible_box/
 │   ├── config.py            # todos os parâmetros ajustáveis

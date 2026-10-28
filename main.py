@@ -40,6 +40,14 @@ def create_window(name, size):
     cv2.resizeWindow(name, *size)
 
 
+def window_closed(name):
+    """True se o usuário fechou a janela no X (sem isso o loop continuava rodando)."""
+    try:
+        return cv2.getWindowProperty(name, cv2.WND_PROP_VISIBLE) < 1
+    except cv2.error:
+        return True
+
+
 def main():
     args = parse_args()
     check_models()
@@ -56,6 +64,8 @@ def main():
             cv2.imshow(WINDOW, view)
 
             key = cv2.waitKey(1) & 0xFF
+            if window_closed(WINDOW):          # fechou no X
+                break
             if key == ord("s"):
                 Path("capturas").mkdir(exist_ok=True)
                 cv2.imwrite(f"capturas/invisible_box_{int(time.time())}.png", view)

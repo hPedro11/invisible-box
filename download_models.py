@@ -22,7 +22,14 @@ def main():
             print(f"{destino} já existe.")
             continue
         print(f"Baixando {destino.name}...")
-        urlretrieve(url, destino)
+        # baixa num arquivo temporário e só renomeia no fim: se o download cair,
+        # não fica um modelo pela metade que pareceria "já baixado"
+        parcial = destino.with_name(destino.name + ".part")
+        try:
+            urlretrieve(url, parcial)
+            parcial.replace(destino)
+        finally:
+            parcial.unlink(missing_ok=True)
         print(f"Pronto: {destino}")
 
 

@@ -23,7 +23,7 @@ import numpy as np
 
 from invisible_box import config, gestures
 from invisible_box.pipeline import Pipeline, open_camera
-from main import check_models, create_window
+from main import check_models, create_window, window_closed
 
 WINDOW = "Invisible Box - calibracao"
 SLIDERS = "Ajustes"
@@ -150,7 +150,7 @@ class Recorder:
 
 def draw_measurements(view, controller, person, known, status):
     """Painel à esquerda: razão da pinça por mão, área das pessoas e fundo aprendido."""
-    x0, y0, bar_w = 10, 44, 260
+    x0, y0, bar_w = 10, 64, 260   # abaixo do HUD (que pode ter 2 linhas)
     lines = 2 + 2 * max(len(controller.hands), 1)
     cv2.rectangle(view, (0, y0 - 4), (x0 + bar_w + 140, y0 + 22 * lines + 8), (0, 0, 0), -1)
     pct = 100 * float((person > 0).mean())
@@ -209,6 +209,8 @@ def main():
             cv2.imshow(WINDOW, view)
 
             key = cv2.waitKey(1) & 0xFF
+            if window_closed(WINDOW):          # fechou no X
+                break
             if key in RECORDINGS:
                 recorder.start(key, pipe.now)
             elif key == ord("s"):

@@ -63,9 +63,10 @@ class Pipeline:
             frame = cv2.flip(frame, 1)
 
         now = time.perf_counter()
-        dt = min(now - self._last, 0.1)
+        elapsed = now - self._last
+        dt = min(elapsed, 0.1)   # limite só para a física (um travão não arremessa a janela)
         self._last, self.now = now, now
-        self.fps = self.fps * 0.9 + (1.0 / max(dt, 1e-3)) * 0.1
+        self.fps = self.fps * 0.9 + (1.0 / max(elapsed, 1e-3)) * 0.1   # FPS real, sem o limite
 
         # 1) Visão: mãos e pessoas ao mesmo tempo (o MediaPipe recebe cópias reduzidas).
         # Sem mãos na tela, procurar mãos é o mais caro (o modelo varre a imagem

@@ -1,4 +1,8 @@
 """Parâmetros do Invisible Box. Ajuste aqui sem mexer no resto do código."""
+from pathlib import Path
+
+# raiz do projeto: os modelos são achados mesmo rodando o programa de outra pasta
+PROJECT_DIR = Path(__file__).resolve().parent.parent
 
 # --- Câmera ---------------------------------------------------------------
 CAMERA_INDEX = 0
@@ -8,7 +12,7 @@ PROCESS_WIDTH = 640        # largura das cópias reduzidas que vão para o Media
 MIRROR = True              # espelha a imagem (fica natural, como um espelho)
 
 # --- MediaPipe: mãos (Lab13) ---------------------------------------------
-MODEL_PATH = "models/hand_landmarker.task"
+MODEL_PATH = str(PROJECT_DIR / "models" / "hand_landmarker.task")
 MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
     "hand_landmarker/float16/latest/hand_landmarker.task"
@@ -22,7 +26,7 @@ HAND_IDLE_EVERY = 2        # sem mãos na tela, procura mãos a cada N frames (�
 # --- MediaPipe: segmentação de pessoas ------------------------------------
 # selfie_segmenter: ~6 ms por frame, bordas um pouco serrilhadas (padrão).
 # selfie_multiclass_256x256: bordas melhores (cabelo, roupa), mas ~90 ms por frame.
-SEGMENTER_PATH = "models/selfie_segmenter.tflite"
+SEGMENTER_PATH = str(PROJECT_DIR / "models" / "selfie_segmenter.tflite")
 SEGMENTER_URL = (
     "https://storage.googleapis.com/mediapipe-models/image_segmenter/"
     "selfie_segmenter/float16/latest/selfie_segmenter.tflite"
