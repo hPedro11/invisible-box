@@ -26,17 +26,19 @@ Entregáveis pedidos: repositório no GitHub, aprovação da ideia pelo professo
 
 ## Comandos
 
-- Instalar: `pip install -r requirements.txt` e `python download_models.py` (baixa `models/hand_landmarker.task`, que não é versionado).
+- Instalar: `pip install -r requirements.txt` e `python download_models.py` (baixa os modelos de mãos e de segmentação, que não são versionados).
 - Rodar: `python main.py` (`--camera 1`, `--debug`).
 - Calibrar com a webcam: `python calibrar.py` (sliders de segmentação/pinça/vidro + gravações rotuladas da pinça; `S` salva medições e sugestões em `calibracao.json`, não versionado).
 - Testes sem webcam: `python -m tests.test_offline` (mãos e cena sintéticas; salva `tests/output/render.png`).
 
 ## Estado atual
 
-- Segunda versão (branch `calibracao-webcam`): interação por indicadores + pinça rápida, segmentação do MediaPipe no lugar da subtração de fundo, fundo aprendido com pessoas na cena e vidro transparente com aberração cromática. Testada com dados sintéticos e com um frame real do vídeo de referência. **Ainda não foi testada com a webcam real**; próximo passo: rodar `calibrar.py` e ajustar `PINCH_*`, `SEG_THRESHOLD` e `GLASS_*`.
-- A câmera precisa ficar parada (o fundo aprendido vale para aquele ponto de vista).
-- Limite físico: quem fica parado no mesmo lugar desde o início deixa um buraco nunca visto no fundo (inpaint = mancha lisa). O primeiro teste com webcam mostrou isso (fundo 93%). Um aviso no topo da janela (`overlay.draw_missing_notice`) mostra a % do fundo dela nunca vista quando passa de `BG_MISSING_WARN`, e o debug (D) pinta essas áreas de magenta; a solução é a pessoa sair do quadro por ~2 s.
-- Repositório: https://github.com/hPedro11/invisible-box (`main` + tags `v1.0` e `v2.0`; cada versão marcante ganha uma tag nova). Falta: enviar a ideia para aprovação do professor.
+- Versão atual na `main` (tags `v1.0`, `v2.0`, `v2.1`; a próxima tag sai quando o grupo aprovar a versão atual na webcam). Testada na webcam do Pedro (1280x720, ~15-18 FPS na tomada; na bateria o FPS cai muito): interação por indicadores + pinça rápida funciona, janela com linha fina como no vídeo, efeito de vidro aprovado.
+- Problemas já resolvidos com testes de regressão em `tests/test_offline.py`: mancha cinza por exposição automática, rosto gravado no fundo ("fantasma") quando o segmentador falha, tremido do vidro, FPS baixo (fundo em float no NumPy).
+- A câmera precisa ficar parada (o fundo aprendido vale para aquele ponto de vista). Ao abrir, sair do quadro por 2-3 s até `fundo 100%`.
+- Limite físico: quem fica parado no mesmo lugar desde o início deixa um buraco nunca visto no fundo (inpaint = borrado). Um aviso no topo da janela (`overlay.draw_missing_notice`) mostra a % do fundo dela nunca vista quando passa de `BG_MISSING_WARN`, e o debug (D) pinta essas áreas de magenta.
+- Possíveis próximos passos: revisão geral do código, testar em outros ambientes/câmeras (colegas do grupo), modelo `selfie_multiclass` como opção para luz ruim, enviar a ideia para aprovação do professor.
+- Repositório: https://github.com/hPedro11/invisible-box (público). Cada mudança vira commit + push na `main`; versões marcantes ganham tag.
 
 ## Grupo
 
